@@ -9,7 +9,6 @@ python convert.py \
     --target-pipeline-parallel-size 2 \
     --target-expert-parallel-size 2 \
     --target-params-dtype fp32 \
-    --megatron-path <xxx>
 
 
 # dense model convert to sparse model, mlp weight copy to all experts weight
@@ -26,17 +25,73 @@ python convert.py \
     --target-params-dtype fp32 \
     --target-num-experts 8 \
     --true-vocab-size 151851 \
-    --megatron-path <xxx>
+
 
 python convert.py \
-    --model-type llama \
+    --model-type aquila3_dense aquila3_moe \
     --loader transformers \
     --saver mcore \
-    --load-dir meta-llama3/Meta-Llama-3-8B \
-    --save-dir outputs_llama3/checkpoint_mc \
-    --target-tensor-parallel-size 4 \
-    --target-pipeline-parallel-size 2 \
+    --load-dir /share/project/aquila3/FlagScale/outputs/checkpoints/ \
+    --save-dir output-moe-mcore \
+    --true-vocab-size 151851 \
+    --target-tensor-parallel-size 1 \
+    --target-pipeline-parallel-size 4 \
+    --target-expert-parallel-size 2 \
+    --target-num-experts 8 \
+#    --target-params-dtype fp32 \
+
+
+python convert.py \
+    --model-type aquila3_moe \
+    --loader mcore \
+    --saver transformers \
+    --load-dir output-moe-mcore \
+    --save-dir output-moe-hf \
+    --true-vocab-size 151851 \
+    --target-tensor-parallel-size 1 \
+    --target-pipeline-parallel-size 1 \
     --target-expert-parallel-size 1 \
+#    --target-params-dtype bf16
+
+
+# for emu-7b: aquila3-dense-hf --> emu3-dense-mg
+python tools/checkpoint/convert.py \
+    --model-type aquila3_dense emu3_dense \
+    --loader transformers \
+    --saver mcore \
+    --load-dir /share/project/zhaoyingli/checkpoints/aquila3_7b_nocooling_hf \
+    --save-dir /share/project/zhaoyingli/checkpoints/ckpt_emu3_7b/ \
+    --target-tensor-parallel-size 4 \
+    --target-pipeline-parallel-size 1 \
+    --target-expert-parallel-size 1 \
+    --true-vocab-size 184622 \
+    --true-language-vocab-size 151851 \
+    --target-params-dtype fp32 \
+    --build-model-with-initialization \
+
+
+# for emu-7b: emu3-dense-mg --> emu3-dense-mg
+python tools/checkpoint/convert.py \
+    --model-type emu3_dense \
+    --loader mcore \
+    --saver mcore \
+    --load-dir /share/project/zhaoyingli/checkpoints/ckpt_emu3_7b \
+    --save-dir /share/project/zhaoyingli/checkpoints/ckpt_emu3_7b_2 \
+    --target-tensor-parallel-size 4 \
+    --target-pipeline-parallel-size 1 \
+    --target-expert-parallel-size 1 \
+    --true-vocab-size 184622 \
+    --true-language-vocab-size 151851 \
+    --target-params-dtype fp32 \
+
+
+# for emu-7b: emu3-dense-mg --> emu3-dense-hf
+python tools/checkpoint/convert.py \
+    --model-type emu3_dense \
+    --loader mcore \
+    --saver transformers \
+    --load-dir /share/project/zhaoyingli/checkpoints/ckpt_emu3_7b_2/ \
+    --save-dir /share/project/zhaoyingli/checkpoints/hf_ckpt_emu3_7b \
     --target-params-dtype bf16 \
     --true-vocab-size 128256 \
     --megatron-path <xxx>
@@ -81,3 +136,39 @@ python convert.py \
     --target-params-dtype bf16 \
     --true-vocab-size 128256 \
     --megatron-path <xxx>
+    --true-vocab-size 184622 \
+    --true-language-vocab-size 151851 \
+
+
+# # for emu-8x7b
+# python tools/checkpoint/convert.py \
+#     --model-type aquila3_moe emu3_moe \
+#     --loader mcore \
+#     --saver mcore \
+#     --load-dir /share/project/zhaoyingli/gitee/aquila_7b_k73_qwen_aquila3_gama_moe/ \
+#     --save-dir /share/project/zhaoyingli/gitee/ckpt_emu3_8x7b/ \
+#     --target-tensor-parallel-size 1 \
+#     --target-pipeline-parallel-size 8 \
+#     --target-expert-parallel-size 2 \
+#     --true-vocab-size 168237 \
+#     --true-language-vocab-size 151851 \
+#     --target-num-experts 8 \
+#     --build-model-with-initialization \
+
+
+# # for multimodal emu-12x7b
+# python tools/checkpoint/convert.py \
+#     --model-type aquila3_moe emu3_moe \
+#     --loader mcore \
+#     --saver mcore \
+#     --load-dir /share/project/zhaoyingli/gitee/aquila_7b_k73_qwen_aquila3_gama_moe/ \
+#     --save-dir /share/project/zhaoyingli/gitee/ckpt_emu3_12x7b/ \
+#     --target-tensor-parallel-size 1 \
+#     --target-pipeline-parallel-size 8 \
+#     --target-expert-parallel-size 2 \
+#     --true-vocab-size 168237 \
+#     --true-language-vocab-size 151851 \
+#     --target-num-experts 12 \
+#     --target-num-experts-split 8 \
+#     --use-multimodal-router \
+#     --build-model-with-initialization \

@@ -340,6 +340,7 @@ class Attention(MegatronModule, ABC):
         rotary_pos_sin=None,
         attention_bias=None,
         packed_seq_params=None,
+        multimodal_mask=None,
     ):
         """
         Perform a forward pass through the attention module.
@@ -360,7 +361,7 @@ class Attention(MegatronModule, ABC):
         # =====================
         # Get the query, key and value tensors based on the type of attention -
         # self or cross attn.
-        query, key, value = self.get_query_key_value_tensors(hidden_states, key_value_states)
+        query, key, value = self.get_query_key_value_tensors(hidden_states, key_value_states, multimodal_mask)
 
         # ===================================================
         # Adjust key, value, and rotary_pos_emb for inference
@@ -465,7 +466,10 @@ class Attention(MegatronModule, ABC):
         # Output. [sq, b, h]
         # =================
 
-        output, bias = self.linear_proj(core_attn_out)
+        if multimodal_mask is not None:
+            output, bias = self.linear_proj(core_attn_out, multimodal_mask)
+        else:
+            output, bias = self.linear_proj(core_attn_out)
 
         return output, bias
 
@@ -598,12 +602,15 @@ class SelfAttention(Attention):
                 "TP",
             )
 
-    def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
+    def get_query_key_value_tensors(self, hidden_states, key_value_states=None, multimodal_mask=None):
         """
         Derives `query`, `key` and `value` tensors from `hidden_states`.
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
-        mixed_qkv, _ = self.linear_qkv(hidden_states)
+        if multimodal_mask is not None:
+            mixed_qkv, _ = self.linear_qkv(hidden_states, multimodal_mask)
+        else:
+            mixed_qkv, _ = self.linear_qkv(hidden_states)
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         new_tensor_shape = mixed_qkv.size()[:-1] + (

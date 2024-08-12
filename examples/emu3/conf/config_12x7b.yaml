@@ -1,0 +1,41 @@
+defaults:
+  - _self_
+  - train: train_emu3_12x7b
+
+experiment:
+  exp_name: Emu3_12x7b
+  seed: 2024
+  save_steps: 1000
+  load: null
+  exp_dir: /share/project/zhaoyingli/gitee/Experiments/${experiment.exp_name}
+  task:
+    type: train
+    backend: megatron
+    entrypoint: flagscale/train/train_emu3.py
+  runner:
+    per_node_task: false
+    no_shared_fs: false
+    rdzv_backend: static
+    hostfile: /share/project/zhaoyingli/hostfile
+  envs:
+    LOGLEVEL: "INFO"
+    NVTE_FUSED_ATTN: 0
+    CUDA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
+    CUDA_DEVICE_MAX_CONNECTIONS: 1
+    NCCL_SOCKET_IFNAME: eth0
+    NCCL_IB_DISABLE: 0
+    NCCL_IB_CUDA_SUPPORT: 1
+    NCCL_IB_GID_INDEX: 0
+    NCCL_IB_TIMEOUT: 22
+    NCCL_IB_RETRY_CNT: 13
+    OMP_NUM_THREADS: 4
+    GLOO_SOCKET_IFNAME: eth0
+    NCCL_IB_HCA: mlx5_2,mlx5_5
+  cmds:
+    before_start: "ulimit -n 1048576"
+
+action: run
+
+hydra:
+  run:
+    dir: ${experiment.exp_dir}/hydra

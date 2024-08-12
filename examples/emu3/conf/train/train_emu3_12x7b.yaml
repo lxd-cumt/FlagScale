@@ -1,0 +1,120 @@
+system:
+  no_shared_fs: ${experiment.runner.no_shared_fs}
+  num_workers: 16
+  tensor_model_parallel_size: 1
+  pipeline_model_parallel_size: 8
+  expert_model_parallel_size: 2
+  context_parallel_size: 1
+  disable_bias_linear: true
+  add_qkv_bias: true
+  qk_layernorm: false
+  sequence_parallel: true
+  use_distributed_optimizer: true
+  # recompute_method: "uniform"
+  # recompute_granularity: "full"
+  # recompute_num_layers: 1
+  overlap_grad_reduce: true
+  overlap_param_gather: true
+  precision:
+    bf16: true
+    attention_softmax_in_fp32: true
+    accumulate_allreduce_grads_in_fp32: true
+  logging:
+    log_interval: 1
+    tensorboard_log_interval: 1
+    wandb_project: ${experiment.exp_name}
+    wandb_exp_name: ${experiment.exp_name}
+    log_timers_to_tensorboard: false
+    log_validation_ppl_to_tensorboard: true
+    log_throughput: true
+    log_params_norm: true
+    log_num_zeros_in_grad: true
+    log_memory_to_tensorboard: true
+  checkpoint:
+    save_interval: ${experiment.save_steps}
+    load: ${experiment.load}
+
+
+model:
+  transformer_impl: transformer_engine
+  num_layers: 32
+  hidden_size: 4096
+  ffn_hidden_size: 14336
+  num_attention_heads: 32
+  group_query_attention: true
+  num_query_groups: 8
+  seq_length: 4096
+  max_position_embeddings: 4096
+  norm_epsilon: 1e-5
+  use_rotary_position_embeddings: true
+  rotary_base: 1000000
+  norm_init_weight: 0.5
+  swiglu: true
+  normalization: RMSNorm
+  attention_dropout: 0.0
+  hidden_dropout: 0.0
+  untie_embeddings_and_output_weights: true
+  no_position_embedding: true
+
+  # route args ====================
+  language_vocab_size: 151851
+  num_experts: 12
+  multimodal_num_experts_split: 8
+  use_multimodal_router_mlp: true
+  use_multimodal_router_attn: true
+  multimodal_freeze_language_parameters: true
+  multimodal_visual_loss_weight: 0.25
+  multimodal_moe_router_load_balancing_type: 
+    - aux_loss # language
+    - aux_loss # vision
+  multimodal_moe_router_topk:
+    - 2
+    - 2
+  multimodal_moe_aux_loss_coeff:
+    - 0.02
+    - 0.02
+  multimodal_visual_start_end_tokens:
+    - 151851
+    - 151852
+    - 151853
+  # =================================
+
+  # training
+  seed: ${experiment.seed}
+  finetune: true
+  train_iters: 120000
+  micro_batch_size: 1
+  global_batch_size: 512
+  eval_interval: 2000
+  eval_iters: 0
+  extra_valid_interval: 0
+
+  # optimizer
+  optimizer: adam
+  lr: 0.0003
+  min_lr: 0.00003
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_eps: 1.0e-6
+  clip_grad: 1.0
+  lr_warmup_fraction: 0.02
+  lr_decay_iters: 120000
+  lr_decay_style: cosine
+
+
+data:
+  no_create_attention_mask_in_dataloader: true
+  data_path: [
+    0.5, /share/project/zhaoyingli/data/sa11m/sa11m_i2t_qwen,
+    0.5, /share/project/zhaoyingli/data/sa11m/sa11m_t2i_qwen,
+  ]
+  split: 1
+  tokenizer:
+    tokenizer_type: Emu3TokenizerFS
+    tokenizer_path: examples/emu3/tokenizer_hf
+    vocab_file: null
+    merge_file: null
+    special_tokens_file: examples/emu3/tokenizer_hf/emu3_vision_tokens.txt
+    vocab_size: 184622 # 151851 + 32768 + 3
+    make_vocab_size_divisible_by: 64

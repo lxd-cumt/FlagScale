@@ -15,6 +15,10 @@ def add_arguments(parser):
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of megatron repository')
 
+    # for emu model
+    group.add_argument('--true-language-vocab-size', type=int, default=None,
+                       help='original size of language vocab, if specified will trim padding from embedding table.')
+
 
 def _load_checkpoint(queue, args):
 
@@ -32,6 +36,13 @@ def _load_checkpoint(queue, args):
 
     if args.megatron_path is not None:
         sys.path.insert(0, args.megatron_path)
+
+    try:
+        from flagscale.train.arguments import add_flagscale_args
+    except ModuleNotFoundError:
+        print("Unable to import FlagScale")
+        queue.put("exit")
+        exit(1)
 
     try:
         from megatron.training.arguments import parse_args, validate_args
@@ -83,7 +94,7 @@ def _load_checkpoint(queue, args):
         '--load', args.load_dir
     ]
 
-    margs = parse_args()
+    margs = parse_args(add_flagscale_args)
     margs, checkpoint_args = load_args_from_checkpoint(margs)
 
     def _set_arg(arg_name):
@@ -93,11 +104,24 @@ def _load_checkpoint(queue, args):
     _set_arg("expert_model_parallel_size")
     _set_arg("num_experts")
     _set_arg("sequence_parallel")
+    # for emu ==========================================
+    _set_arg("language_padded_vocab_size")
+    _set_arg("vision_padded_vocab_size")
+    _set_arg("make_vocab_size_divisible_by")
+    _set_arg("multimodal_num_experts_split")
+    _set_arg("use_multimodal_router_mlp")
+    _set_arg("use_multimodal_router_attn")
+    _set_arg("multimodal_freeze_language_parameters")
+    _set_arg("multimodal_moe_router_load_balancing_type")
+    _set_arg("multimodal_moe_router_topk")
+    _set_arg("multimodal_moe_aux_loss_coeff")
+    _set_arg("multimodal_visual_start_end_tokens")
+    # ==================================================
 
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes
     margs.world_size = margs.tensor_model_parallel_size * margs.pipeline_model_parallel_size * margs.expert_model_parallel_size
-    
+
     # Explicitly copy data types from checkpoint.
     margs.fp16 = checkpoint_args.fp16
     margs.bf16 = checkpoint_args.bf16
@@ -200,6 +224,7 @@ def _load_checkpoint(queue, args):
     md.previous_pipeline_parallel_size = margs.pipeline_model_parallel_size
     md.previous_expert_parallel_size = margs.expert_model_parallel_size
     md.true_vocab_size = args.true_vocab_size # true (non-padded) vocab size
+    md.true_language_vocab_size = args.true_language_vocab_size # true (non-padded) vocab size
     md.make_vocab_size_divisible_by = margs.make_vocab_size_divisible_by
     md.checkpoint_args = checkpoint_args
 

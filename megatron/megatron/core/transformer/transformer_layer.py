@@ -269,6 +269,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         attention_bias=None,
         inference_params=None,
         packed_seq_params=None,
+        multimodal_mask=None,
     ):
         """
         Perform a forward pass through the transformer layer.
@@ -310,6 +311,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             rotary_pos_sin=rotary_pos_sin,
             attention_bias=attention_bias,
             packed_seq_params=packed_seq_params,
+            multimodal_mask=multimodal_mask,
         )
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
@@ -350,7 +352,10 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         pre_mlp_layernorm_output = self.pre_mlp_layernorm(hidden_states)
 
         # MLP.
-        mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output)
+        if multimodal_mask is not None:
+            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output, multimodal_mask=multimodal_mask)
+        else:
+            mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output)
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
         # inside the module provided in the `bias_dropout_add_spec` module?

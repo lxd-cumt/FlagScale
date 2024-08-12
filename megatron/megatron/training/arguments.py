@@ -1870,6 +1870,7 @@ def _add_tokenizer_args(parser):
                                 'Llama3TokenizerFS',
                                 'QwenTokenizerFS',
                                 'Qwen2TokenizerFS',
+                                'Emu3TokenizerFS',
                                 'NullTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-path', type=str, default=None,

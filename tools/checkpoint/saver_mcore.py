@@ -29,6 +29,10 @@ def add_arguments(parser):
                             'Only used when converting a Transformers checkpoint to a Megatron checkpoint.')
     group.add_argument("--build-model-with-initialization", action="store_true")
 
+    # for emu model
+    group.add_argument('--target-num-experts-split', type=int, default=None)
+    group.add_argument("--use-multimodal-router", action="store_true")
+
 
 def save_checkpoint(queue, args):
 
@@ -46,6 +50,13 @@ def save_checkpoint(queue, args):
 
     if args.megatron_path is not None:
         sys.path.insert(0, args.megatron_path)
+
+    try:
+        from flagscale.train.arguments import add_flagscale_args
+    except ModuleNotFoundError:
+        print("Unable to import FlagScale")
+        queue.put("exit")
+        exit(1)
 
     try:
         from megatron.training.arguments import parse_args, validate_args
@@ -148,6 +159,7 @@ def save_checkpoint(queue, args):
         '--tensor-model-parallel-size', str(args.target_tensor_parallel_size),
         '--pipeline-model-parallel-size', str(args.target_pipeline_parallel_size),
         '--expert-model-parallel-size', str(args.target_expert_parallel_size),
+        '--context-parallel-size', '1',
         '--no-masked-softmax-fusion',
         '--no-bias-gelu-fusion',
         '--no-bias-dropout-fusion',
@@ -168,6 +180,12 @@ def save_checkpoint(queue, args):
         sys.argv.append('--sequence-parallel')
     if not args.build_model_with_initialization:
         sys.argv.append('--no-initialization')
+    if args.target_num_experts_split is not None:
+        sys.argv.extend(['--multimodal-num-experts-split', str(args.target_num_experts_split)])
+    if args.use_multimodal_router:
+        sys.argv.extend(['--use-multimodal-router-mlp'])
+        sys.argv.extend(['--use-multimodal-router-attn'])
+
     if md.make_vocab_size_divisible_by is not None:
         sys.argv.extend(['--make-vocab-size-divisible-by', str(md.make_vocab_size_divisible_by)])
     if md.output_layer:
@@ -192,7 +210,7 @@ def save_checkpoint(queue, args):
     elif md.params_dtype == torch.bfloat16:
         sys.argv.append('--bf16')
 
-    margs = parse_args()
+    margs = parse_args(add_flagscale_args)
     if hasattr (md, 'checkpoint_args'):
         # These are arguments that we are either changing, or cause problems for validation if they are set
         # Note that some of these deal with T5 so will need to be changed if we support T5.
@@ -201,14 +219,15 @@ def save_checkpoint(queue, args):
                         'masked_softmax_fusion', 'bias_gelu_fusion', 'bias_dropout_fusion',
                         'sequence_parallel', 'async_tensor_model_parallel_allreduce',
                         'no_load_optim', 'no_load_rng', 'no_save_optim', 'no_save_rng',
-                        'vocab_file', 'tokenizer_model', 'expert_model_parallel_size',
+                        'tokenizer_model', 'expert_model_parallel_size',
                         'save_interval', 'save', 'load', 'use_mcore_models', 'num_experts',
                         'perform_initialization', 'use_cpu_initialization',
                         'recompute_granularity', 'recompute_num_layers', 'recompute_method',
                         'encoder_num_layers', 'encoder_seq_length',
                         'distribute_saved_activations', 'fp16', 'bf16',
                         'train_iters', 'lr_decay_iters', 'lr_warmup_iters', 'lr_warmup_fraction',
-                        'start_weight_decay', 'end_weight_decay']
+                        'start_weight_decay', 'end_weight_decay', 'context_parallel_size',
+                        'multimodal_num_experts_split', 'use_multimodal_router_mlp', 'use_multimodal_router_attn']
 
         for arg, value in vars(md.checkpoint_args).items():
             if arg in args_to_keep:
@@ -236,9 +255,23 @@ def save_checkpoint(queue, args):
     margs.model_type = model_plugin.model_type
 
     if md.true_vocab_size is not None:
-        margs.padded_vocab_size = _vocab_size_with_padding(md.true_vocab_size, margs)
+        margs.vocab_size = md.true_vocab_size
+        if getattr(md, "true_language_vocab_size", None):
+            margs.language_padded_vocab_size = _vocab_size_with_padding(
+                md.true_language_vocab_size, margs
+            )
+            margs.vision_padded_vocab_size = _vocab_size_with_padding(
+                md.true_vocab_size - md.true_language_vocab_size, margs
+            )
+            margs.padded_vocab_size = margs.language_padded_vocab_size + margs.vision_padded_vocab_size
+        else:
+            margs.language_padded_vocab_size = None
+            margs.vision_padded_vocab_size = None
+            margs.padded_vocab_size = _vocab_size_with_padding(md.true_vocab_size, margs)
     else:
         # margs.padded_vocab_size will be set in ckpt_plugin.set_embedding_ckpt func
+        margs.language_padded_vocab_size = None
+        margs.vision_padded_vocab_size = None
         margs.padded_vocab_size = None
 
     """

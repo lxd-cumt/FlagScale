@@ -12,6 +12,10 @@ def add_arguments(parser):
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of deepspeed repository')
 
+    # for emu model
+    group.add_argument('--true-language-vocab-size', type=int, default=None,
+                       help='original size of language vocab, if specified will trim padding from embedding table.')
+
 
 def _load_checkpoint(queue, args):
 
@@ -36,6 +40,13 @@ def _load_checkpoint(queue, args):
 
     if args.megatron_path is not None:
         sys.path.insert(0, args.megatron_path)
+
+    try:
+        from flagscale.train.arguments import add_flagscale_args
+    except ModuleNotFoundError:
+        print("Unable to import FlagScale")
+        queue.put("exit")
+        exit(1)
 
     try:
         from megatron.training.arguments import parse_args, validate_args
@@ -79,7 +90,7 @@ def _load_checkpoint(queue, args):
         '--load', args.load_dir
     ]
 
-    margs = parse_args()
+    margs = parse_args(add_flagscale_args)
     args_plugin.load_args_hf2mg(margs)
 
     print("*"*20 + "validate loader arguments" + "*"*20)
@@ -137,6 +148,7 @@ def _load_checkpoint(queue, args):
     md.previous_expert_parallel_size = margs.expert_model_parallel_size
     md.previous_virtual_pipeline_parallel_size = margs.virtual_pipeline_model_parallel_size
     md.true_vocab_size = args.true_vocab_size
+    md.true_language_vocab_size = args.true_language_vocab_size
     md.make_vocab_size_divisible_by = margs.make_vocab_size_divisible_by
     md.checkpoint_args = margs
     md.consumed_train_samples = margs.consumed_train_samples

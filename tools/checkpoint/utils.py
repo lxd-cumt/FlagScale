@@ -17,11 +17,13 @@ def suspend_nn_inits():
 
 
 def validate_args(args):
-    pass
+    if getattr(args, "true_language_vocab_size", None):
+        assert getattr(args, "true_vocab_size") is not None
 
 
 def padding_vocab_size(orig_word_embed, md, args, attr_name="padded_vocab_size"):
 
+    # attr_name must in ["padded_vocab_size", "language_padded_vocab_size", "vision_padded_vocab_size"]
     vocab_size_attr = eval(f"args.{attr_name}")
     if md.true_vocab_size is not None:
         orig_vocab_size = orig_word_embed.shape[0]
@@ -41,6 +43,7 @@ def padding_vocab_size(orig_word_embed, md, args, attr_name="padded_vocab_size")
         # Same size!
         else:
             full_word_embed = orig_word_embed
+        print(f"> padding vocab_size from {orig_vocab_size} to {vocab_size_attr}")
     else:
         print("Original vocab size not specified, leaving embedding table as-is. "
             "If you've changed the tensor parallel size this could cause problems.")

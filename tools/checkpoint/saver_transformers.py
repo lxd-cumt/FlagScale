@@ -56,7 +56,6 @@ def save_checkpoint(queue, args):
     try:
         from megatron.training.arguments import parse_args, validate_args
         from megatron.training.tokenizer.tokenizer import _vocab_size_with_padding
-        from utils import padding_vocab_size
     except ModuleNotFoundError:
         print("Unable to import Megatron, please specify the path to Megatron using --megatron-path. Exiting.")
         queue.put("exit")
@@ -152,6 +151,7 @@ def save_checkpoint(queue, args):
         '--tensor-model-parallel-size', str(args.target_tensor_parallel_size),
         '--pipeline-model-parallel-size', str(args.target_pipeline_parallel_size),
         '--expert-model-parallel-size', str(args.target_expert_parallel_size),
+        '--context-parallel-size', '1',
         '--no-masked-softmax-fusion',
         '--no-bias-gelu-fusion',
         '--no-bias-dropout-fusion',
@@ -164,6 +164,7 @@ def save_checkpoint(queue, args):
         '--no-load-rng',
         '--no-save-optim',
         '--no-save-rng',
+        '--no-initialization',
         '--save-interval', '1',
         '--save', args.save_dir
     ]
@@ -207,7 +208,7 @@ def save_checkpoint(queue, args):
                         'perform_initialization', 'use_cpu_initialization',
                         'recompute_granularity', 'recompute_num_layers', 'recompute_method',
                         'encoder_num_layers', 'encoder_seq_length',
-                        'distribute_saved_activations', 'fp16', 'bf16',
+                        'distribute_saved_activations', 'fp16', 'bf16', 'context_parallel_size',
                         'train_iters', 'lr_decay_iters', 'lr_warmup_iters', 'lr_warmup_fraction',
                         'start_weight_decay', 'end_weight_decay']
 
@@ -225,9 +226,23 @@ def save_checkpoint(queue, args):
     margs = validate_args(margs)
     margs.use_dist_ckpt = False
     if md.true_vocab_size is not None:
-        margs.padded_vocab_size = _vocab_size_with_padding(md.true_vocab_size, margs)
+        margs.vocab_size = md.true_vocab_size
+        if getattr(md, "true_language_vocab_size", None):
+            margs.language_padded_vocab_size = _vocab_size_with_padding(
+                md.true_language_vocab_size, margs
+            )
+            margs.vision_padded_vocab_size = _vocab_size_with_padding(
+                md.true_vocab_size - md.true_language_vocab_size, margs
+            )
+            margs.padded_vocab_size = margs.language_padded_vocab_size + margs.vision_padded_vocab_size
+        else:
+            margs.language_padded_vocab_size = None
+            margs.vision_padded_vocab_size = None
+            margs.padded_vocab_size = _vocab_size_with_padding(md.true_vocab_size, margs)
     else:
         # margs.padded_vocab_size will be set in ckpt_plugin.set_embedding_ckpt func
+        margs.language_padded_vocab_size = None
+        margs.vision_padded_vocab_size = None
         margs.padded_vocab_size = None
 
     """
@@ -244,10 +259,7 @@ def save_checkpoint(queue, args):
 
     # process embedding
     msg = queue_get("embeddings")
-    origin_embed = msg.pop("word embeddings")
-    print("Warning: saver_transformers will change embedding to be no-padded .")
-    full_word_embed = padding_vocab_size(origin_embed, md, margs)[:margs.vocab_size, :]
-    hf_model.model.embed_tokens.weight.data.copy_(full_word_embed)
+    ckpt_plugin.set_hf_embedding_ckpt(msg, hf_model, md, margs)
     check_message(msg)
 
     # process transformer layer
@@ -261,18 +273,13 @@ def save_checkpoint(queue, args):
 
     # process final layernorm
     msg = queue_get("final norm")
-    hf_model.model.norm.weight.data.copy_(msg.pop("weight"))
-    if md.norm_has_bias:
-        hf_model.model.norm.bias.data.copy_(msg.pop("bias"))
+    ckpt_plugin.set_hf_final_norm_ckpt(msg, hf_model, md, margs)
     check_message(msg)
 
     # process final linear
     if md.output_layer:
         msg = queue_get("output layer")
-        orig_output_layer_weight = msg.pop("weight")
-        print("Warning: saver_transformers will change output_layer to be no-padded .")
-        full_output_layer_weight = padding_vocab_size(orig_output_layer_weight, md, margs)[:margs.vocab_size, :]
-        hf_model.lm_head.weight.data.copy_(full_output_layer_weight)
+        ckpt_plugin.set_hf_output_layer_ckpt(msg, hf_model, md, margs)
         check_message(msg)
 
     print(f"hf model is saving to {args.save_dir} ...")

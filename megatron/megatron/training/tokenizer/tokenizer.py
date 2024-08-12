@@ -114,6 +114,20 @@ def build_tokenizer(args, **kwargs):
             args.special_tokens,
             args.image_tag_type,
         )
+    elif args.tokenizer_type == "Emu3TokenizerFS":
+        assert args.tokenizer_path is not None
+        assert args.special_tokens_file is not None
+        tokenizer = _Emu3TokenizerFS(args.tokenizer_path, args.special_tokens_file) 
+        # Add vocab size (if not already set from a checkpoint).
+        if getattr(args, "language_padded_vocab_size", None) is None:
+            args.language_padded_vocab_size = _vocab_size_with_padding(
+                args.language_vocab_size, args
+            )
+        if getattr(args, "vision_padded_vocab_size", None) is None:
+            args.vision_padded_vocab_size = _vocab_size_with_padding(
+                args.vocab_size - args.language_vocab_size, args
+            )
+        args.padded_vocab_size = args.language_padded_vocab_size + args.vision_padded_vocab_size
     else:
         raise NotImplementedError('{} tokenizer is not ' 'implemented.'.format(args.tokenizer_type))
 
@@ -1033,3 +1047,57 @@ class _Qwen2TokenizerFS(_HFTokenizerFS):
     @property
     def vocab_size(self):
         return self._vocab_size
+
+
+class _Emu3TokenizerFS(MegatronTokenizer):
+    """Emu3 tokenizer."""
+
+    def __init__(self, tokenizer_path, special_tokens_file):
+        name = 'HFTokenizer'
+        super().__init__(name)
+
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_path, 
+            trust_remote_code=True, 
+            special_tokens_file=special_tokens_file
+        )
+
+        self.eod_id = self.tokenizer.encode('<|extra_204|>')[0]
+        self.cls_id = self.tokenizer.encode('<|extra_203|>')[0]
+        self.pad_id = self.tokenizer.encode('<|endoftext|>')[0]
+
+        self._inv_vocab = None
+
+    @property
+    def vocab_size(self):
+        return self.tokenizer.vocab_size
+
+    @property
+    def vocab(self):
+        return self.tokenizer.get_vocab()
+
+    @property
+    def inv_vocab(self):
+        vocab = self.vocab()
+        if self._inv_vocab is None:
+            self._inv_vocab = {v: k for k, v in vocab.items()}
+        return self._inv_vocab
+    
+    def tokenize(self, text):
+        return self.tokenizer.encode(text)
+
+    def detokenize(self, token_ids):
+        return self.tokenizer.decode(token_ids)
+
+    @property
+    def eod(self):
+        return self.eod_id
+
+    @property
+    def cls(self):
+        return self.cls_id
+
+    @property
+    def pad(self):
+        return self.pad_id
