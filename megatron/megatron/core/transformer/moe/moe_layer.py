@@ -19,6 +19,7 @@ from megatron.core.transformer.moe.token_dispatcher import (
 )
 from megatron.core.transformer.spec_utils import ModuleSpec
 from megatron.core.transformer.transformer_config import TransformerConfig
+from megatron.core.transformer.moe.moe_utils import save_to_tokens_per_expert_tracker
 
 
 @dataclass
@@ -144,6 +145,21 @@ class MoELayer(BaseMoELayer):
             (dispatched_input, tokens_per_expert) = self.token_dispatcher.token_permutation(
                 hidden_states, probs, routing_map
             )
+
+            if getattr(self.config, "moe_tokens_per_expert_logging", None):
+                mode = getattr(self.config, "moe_router_mode", None)
+                suffix = "" if mode is None else mode
+                save_to_tokens_per_expert_tracker(
+                    "tokens_per_expert" + suffix,
+                    tokens_per_expert,
+                    self.layer_number,
+                    self.local_expert_indices,
+                    self.config.num_moe_experts,
+                    self.config.num_layers,
+                    hidden_states.device,
+                    parallel_state.get_expert_model_parallel_group(),
+                )
+
             expert_output, mlp_bias = self.experts(dispatched_input, tokens_per_expert)
             output, mlp_bias = self.token_dispatcher.token_unpermutation(expert_output, mlp_bias)
             if self.use_shared_expert and not self.shared_expert_overlap:

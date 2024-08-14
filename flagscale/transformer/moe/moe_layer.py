@@ -16,7 +16,7 @@ class MultiModalMoELayer(MegatronModule):
         super().__init__(config=config)
 
         args = get_args()
-        def _set_moe_config(config, idx=0):
+        def _set_moe_config(config, idx=0, mode=None):
             split = args.multimodal_num_experts_split
             config.num_moe_experts = abs(idx * args.num_experts - split) if split  else args.num_experts
             config.moe_router_load_balancing_type = args.multimodal_moe_router_load_balancing_type[idx]
@@ -25,10 +25,12 @@ class MultiModalMoELayer(MegatronModule):
             config.moe_z_loss_coeff = args.multimodal_moe_z_loss_coeff[idx]
             config.moe_input_jitter_eps = args.multimodal_moe_input_jitter_eps[idx]
             config.moe_token_dropping = args.multimodal_moe_token_dropping[idx]
+            config.moe_router_mode = mode
+            config.moe_tokens_per_expert_logging = args.moe_tokens_per_expert_logging
 
-        _set_moe_config(config, 0)
+        _set_moe_config(config, 0, "_lm")
         self.language = build_module(submodules.language, config=deepcopy(config))
-        _set_moe_config(config, 1)
+        _set_moe_config(config, 1, "_vs")
         self.vision = build_module(submodules.vision, config=deepcopy(config))
 
     def forward(self, hidden_states: torch.Tensor, multimodal_mask: torch.Tensor):
@@ -83,3 +85,8 @@ class MultiModalMoELayer(MegatronModule):
                     bias.view(-1, 1)[mask.view(-1), :] = partial_bias[:seq_len, :].view(-1, 1)
 
         return output, bias
+
+    def set_layer_number(self, layer_number: int):
+        self.layer_number = layer_number
+        self.language.set_layer_number(layer_number)
+        self.vision.set_layer_number(layer_number)

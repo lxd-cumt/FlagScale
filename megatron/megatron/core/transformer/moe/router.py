@@ -193,8 +193,10 @@ class TopKRouter(Router):
             moe_aux_loss_coeff,
             sequence_partition_group=sequence_partition_group,
         )
+        mode = getattr(self.config, "moe_router_mode", None)
+        suffix = "" if mode is None else mode
         save_to_aux_losses_tracker(
-            "load_balancing_loss",
+            "load_balancing_loss" + suffix,
             aux_loss / moe_aux_loss_coeff,
             self.layer_number,
             self.config.num_layers,
@@ -220,8 +222,10 @@ class TopKRouter(Router):
             )
             z_loss = z_loss_func(logits, moe_z_loss_coeff)
             logits = MoEAuxLossAutoScaler.apply(logits, z_loss)
+            mode = getattr(self.config, "moe_router_mode", None)
+            suffix = "" if mode is None else mode
             save_to_aux_losses_tracker(
-                "z_loss", z_loss / moe_z_loss_coeff, self.layer_number, self.config.num_layers
+                "z_loss" + suffix, z_loss / moe_z_loss_coeff, self.layer_number, self.config.num_layers
             )
         return logits
 

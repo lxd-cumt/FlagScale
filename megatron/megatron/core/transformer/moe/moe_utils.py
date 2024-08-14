@@ -309,6 +309,30 @@ def topk_softmax_with_capacity(
         return final_probs, final_map, tokens_per_expert
 
 
+def save_to_tokens_per_expert_tracker(
+    name: str,
+    local_tokens_per_expert: torch.Tensor,
+    layer_number: int,
+    local_expert_indices: torch.Tensor,
+    num_experts: int,
+    num_layers: int,
+    device: torch.device,
+    reduce_group: torch.distributed.ProcessGroup = None,
+):
+    if layer_number is None:
+        return
+
+    tracker = parallel_state.get_moe_layer_wise_logging_tracker()
+    if name not in tracker:
+        tracker[name] = {}
+        tracker[name]["values"] = torch.zeros((num_layers, num_experts), device=device)
+
+    tokens_per_expert = torch.zeros(num_experts, dtype=local_tokens_per_expert.dtype, device=device)
+    tokens_per_expert[local_expert_indices] = local_tokens_per_expert.to(device)
+    tracker[name]["values"][layer_number - 1] += tokens_per_expert.detach() # Aggregate the tokens for the layer.
+    tracker[name]["reduce_group"] = reduce_group
+
+
 def save_to_aux_losses_tracker(
     name: str,
     loss: torch.Tensor,
@@ -367,14 +391,14 @@ def reduce_aux_losses_tracker_across_ranks():
 
 
 def track_moe_metrics(
-    loss_scale, iteration, writer, wandb_writer=None, total_loss_dict=None, per_layer_logging=False
+    loss_scale, iteration, writer, wandb_writer=None, total_loss_dict=None, per_layer_logging=False, tokens_per_expert_logging=False,
 ):
     """Track the MoE metrics for logging."""
     # Aux loss logging
     reduce_aux_losses_tracker_across_ranks()
     tracker = parallel_state.get_moe_layer_wise_logging_tracker()
     if writer is not None:
-        aux_losses = {k: v['values'].float() * loss_scale for k, v in tracker.items()}
+        aux_losses = {k: v['values'].float() * loss_scale for k, v in tracker.items() if "loss" in k}
         for name, loss_list in aux_losses.items():
             if total_loss_dict is not None:
                 if name not in total_loss_dict:
@@ -403,5 +427,22 @@ def track_moe_metrics(
                         },
                         iteration,
                     )
+
+    if writer is not None and tokens_per_expert_logging:
+        tokens_of_modes = {k: v['values'].int() for k, v in tracker.items() if "tokens_per_expert" in k}
+        for name, tokens_per_mode in tokens_of_modes.items():
+            avg_token_per_mode = tokens_per_mode.sum(dim=0)/tokens_per_mode.shape[0]
+            for i, tokens in enumerate(avg_token_per_mode):
+                key = f"{name}_expert_{i}"
+                if total_loss_dict is not None:
+                    if key not in total_loss_dict:
+                        total_loss_dict[key] = tokens
+                    else:
+                        total_loss_dict[key] += tokens
+                writer.add_scalar(key, tokens, iteration)
+            if per_layer_logging:
+                for i, tokens_per_layer in enumerate(tokens_per_mode.tolist()):
+                    for j, tokens in enumerate(tokens_per_layer):
+                        writer.add_scalar(f"moe/{name}_layer_{i}_expert_{j}", tokens, iteration)
 
     clear_aux_losses_tracker()

@@ -258,4 +258,9 @@ def _add_emu_args(parser):
     group.add_argument('--multimodal-moe-token-dropping', type=bool, nargs=2, default=[False, False],
                        help='This feature involves selectively dropping and padding tokens for each expert to achieve a specified capacity, similar to GShard, Switch-Transformer, and DeepSpeed-MoE. Note: Currently unsupported.')
 
+    group.add_argument('--moe-tokens-per-expert-logging', action='store_true',
+                       help="Whether to log tokens_per_expert for each layer and avg all layers."
+                       "NOTE: If '--moe-tokens-per-expert-logging' is True and '--moe-per-layer-logging' is False, the tokens_per_expert will be averaged over all layers to logs."
+                       "If '--moe-tokens-per-expert-logging' and '--moe-per-layer-logging' are both True, the tokens_per_expert will be logged for each layer to tensorboard.")
+
     return parser
