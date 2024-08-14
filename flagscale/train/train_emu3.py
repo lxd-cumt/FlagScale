@@ -78,6 +78,7 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
     if args.split == "None":
         args.split = None
     use_te = args.transformer_impl == "transformer_engine"
+    assert use_te
 
     print_rank_0('building GPT model ...')
     # Experimental loading arguments from yaml
@@ -89,16 +90,14 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
     config.init_method = small_init_init_method(config.hidden_size)
     config.output_layer_init_method = wang_init_method(config.num_layers, config.hidden_size)
 
-    assert use_te
-    assert not args.moe_grouped_gemm
-
     if args.spec is not None:
         transformer_layer_spec = import_module(args.spec)
     else:
         transformer_layer_spec = get_emu_with_transformer_engine_spec(
-            args.num_experts, 
-            args.use_multimodal_router_mlp, 
-            args.use_multimodal_router_attn
+            num_experts=args.num_experts, 
+            use_multimodal_router_attn=args.use_multimodal_router_attn,
+            use_multimodal_router_mlp=args.use_multimodal_router_mlp,
+            moe_grouped_gemm=args.moe_grouped_gemm,
         )
 
     model = EmuModel(
