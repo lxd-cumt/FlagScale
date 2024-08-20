@@ -2,12 +2,6 @@
 """Pretrain GPT."""
 
 import os
-import sys
-from utils import CustomModuleFinder
-sys.path.append(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))))
-sys.meta_path.insert(0, CustomModuleFinder())
-
 import math
 import torch
 from functools import partial
@@ -115,7 +109,6 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
         rotary_percent=args.rotary_percent,
         rotary_base=args.rotary_base,
     )
-    print_rank_0(model)
 
     if args.multimodal_freeze_language_parameters:
         model.freeze_language_model()
