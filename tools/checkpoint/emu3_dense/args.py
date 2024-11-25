@@ -9,7 +9,7 @@ def load_args_hf2mg(args):
 
 def save_args_mg2hf(args):
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
-    from examples.emu3.emu3_dense.configuration_llama import LlamaConfig
+    from examples.emu.emu3_dense.configuration_llama import LlamaConfig
 
     LlamaConfig.model_type = "emu3"
     config = LlamaConfig(

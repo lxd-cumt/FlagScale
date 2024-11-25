@@ -89,8 +89,10 @@ def _load_checkpoint(queue, args):
         '--no-save-optim',
         '--no-save-rng',
         '--no-initialization',
+        '--mock-data', # To pass the "blend data checks" in arguments.py
         '--use-mcore-models',
         '--transformer-impl', 'transformer_engine',
+        '--exit-on-missing-checkpoint',
         '--load', args.load_dir
     ]
 
@@ -255,11 +257,12 @@ def _load_checkpoint(queue, args):
                     model_.append(this_model)
             else:
                 pre_process = mpu.is_pipeline_first_stage()
-                post_process = mpu.is_pipeline_last_stage() 
+                post_process = mpu.is_pipeline_last_stage()
                 model_ = [model_plugin.get_mg_model(dtype, pre_process, post_process)]
 
             margs.consumed_train_samples = 0
             margs.consumed_valid_samples = 0
+            margs.exit_on_missing_checkpoint = True
             load_checkpoint(model_, None, None)
 
             if consumed_train_samples is not None:

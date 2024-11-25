@@ -166,6 +166,7 @@ def save_checkpoint(queue, args):
         '--no-save-rng',
         '--no-initialization',
         '--save-interval', '1',
+        '--ckpt-format', 'torch', # only 'torch' supported for conversion
         '--save', args.save_dir
     ]
     if args.target_num_experts is not None:
@@ -198,19 +199,21 @@ def save_checkpoint(queue, args):
     if hasattr (md, 'checkpoint_args'):
         # These are arguments that we are either changing, or cause problems for validation if they are set
         # Note that some of these deal with T5 so will need to be changed if we support T5.
-        args_to_keep = ['tensor_model_parallel_size', 'pipeline_model_parallel_size', 'world_size', 'params_dtype',
+        args_to_keep = ['tensor_model_parallel_size', 'pipeline_model_parallel_size', 'expert_model_parallel_size', 'world_size', 'params_dtype',
                         'num_layers_per_virtual_pipeline_stage', 'virtual_pipeline_model_parallel_size',
                         'masked_softmax_fusion', 'bias_gelu_fusion', 'bias_dropout_fusion',
                         'sequence_parallel', 'async_tensor_model_parallel_allreduce',
                         'no_load_optim', 'no_load_rng', 'no_save_optim', 'no_save_rng',
-                        'vocab_file', 'tokenizer_model', 'expert_model_parallel_size',
+                        'vocab_file', 'tokenizer_model',
                         'save_interval', 'save', 'load', 'use_mcore_models', 'num_experts',
                         'perform_initialization', 'use_cpu_initialization',
                         'recompute_granularity', 'recompute_num_layers', 'recompute_method',
                         'encoder_num_layers', 'encoder_seq_length',
                         'distribute_saved_activations', 'fp16', 'bf16', 'context_parallel_size',
                         'train_iters', 'lr_decay_iters', 'lr_warmup_iters', 'lr_warmup_fraction',
-                        'start_weight_decay', 'end_weight_decay']
+                        'start_weight_decay', 'end_weight_decay',
+                        'ckpt_format',
+        ]
 
         for arg, value in vars(md.checkpoint_args).items():
             if arg in args_to_keep:
