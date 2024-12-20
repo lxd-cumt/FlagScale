@@ -1,4 +1,4 @@
-name: format
+name: Format Check
 
 on:
   pull_request:
@@ -6,39 +6,40 @@ on:
     types: [opened, synchronize, reopened]
 
 env:
-  CHECK_FILES: >-
+  INCLUDE_FILES: >-
     flagscale/auto_tuner/*.py
     flagscale/auto_tuner/prune/*.py
     flagscale/auto_tuner/record/*.py
     flagscale/auto_tuner/search/*.py
-    flagscale/launcher/*.py
+    flagscale/runner/*.py
     flagscale/logger.py
     flagscale/patches_utils.py
     flagscale/datasets/sft_dataset.py
+    flagscale/inference/inference_*.py
+    flagscale/inference/arguments.py
 
 jobs:
   format:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Set up Python 3.10
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
-    
+
     - name: Install dependencies
       run: |
         pip install black isort
 
     - name: Run Black
-      run: >-
-        black --check --diff --include $CHECK_FILES ./
-      
+      run: |
+        black --verbose --include "$INCLUDE_FILES" ./ --check || { echo "Code formatting does not comply with Black's rules. Please reformat the code according to Black and resubmit."; exit 1; }
+
     - name: Run Isort
       run: |
-        isort --profile black --check --diff $CHECK_FILES
-
+        isort --verbose --profile black $INCLUDE_FILES --check-only --diff --known-local-folder flagscale || { echo "Import order does not comply with isort rules. Please fix the import order and resubmit."; exit 1; }
 

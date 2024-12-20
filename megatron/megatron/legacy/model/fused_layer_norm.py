@@ -16,12 +16,12 @@ from megatron.core.utils import make_viewless_tensor
 try:
     from apex.contrib.layer_norm.layer_norm import FastLayerNormFN
     HAVE_PERSIST_LAYER_NORM = True
-except:
+except ImportError:
     HAVE_PERSIST_LAYER_NORM = False
 
 try:
     from apex.normalization.fused_layer_norm import fused_layer_norm_affine
-except:
+except ImportError:
     fused_layer_norm_affine = None
 
 global fused_layer_norm_cuda
@@ -33,17 +33,10 @@ class MixedFusedLayerNorm(torch.nn.Module):
   def __init__(self, normalized_shape, eps=1e-5,
                no_persist_layer_norm=True,
                sequence_parallel=False,
-               apply_layernorm_1p=False,
-               init_weight=None):
+               apply_layernorm_1p=False):
         super(MixedFusedLayerNorm, self).__init__()
 
         self.apply_layernorm_1p = apply_layernorm_1p
-
-        self.init_weight = init_weight
-        assert self.init_weight is None or isinstance(self.init_weight, float), \
-            "Cannot init_weight of None or of non-float"
-        assert not (self.init_weight is not None and self.apply_layernorm_1p), \
-            "Cannot float init_weight and 1p layernorm"
 
         global fused_layer_norm_cuda
         fused_layer_norm_cuda = importlib.import_module("fused_layer_norm_cuda")
@@ -79,12 +72,8 @@ class MixedFusedLayerNorm(torch.nn.Module):
         init.zeros_(self.weight)
         init.zeros_(self.bias)
     else:
-        if self.init_weight:
-            init.constant_(self.weight, self.init_weight)
-            init.zeros_(self.bias)
-        else:
-            init.ones_(self.weight)
-            init.zeros_(self.bias)
+        init.ones_(self.weight)
+        init.zeros_(self.bias)
 
   def forward(self, input):
 

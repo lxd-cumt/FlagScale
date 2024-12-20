@@ -5,16 +5,17 @@
 import os
 import sys
 import torch
+import torch.distributed
 
-from megatron.training import dist_signal_handler
 from megatron.core import Timers
+from megatron.core.num_microbatches_calculator import init_num_microbatches_calculator, unset_num_microbatches_calculator
+from megatron.training import dist_signal_handler
 from megatron.training.tokenizer import build_tokenizer
-from .microbatches import build_num_microbatches_calculator
-from .microbatches_hetero import build_num_microbatches_calculator_hetero
-from .hetero_context import HeteroContext
+
+from flagscale.train.hetero.p2p_communication import get_device_type_for_comm
+from flagscale.train import get_parallel_context  
 
 _GLOBAL_ARGS = None
-_GLOBAL_NUM_MICROBATCHES_CALCULATOR = None
 _GLOBAL_TOKENIZER = None
 _GLOBAL_TENSORBOARD_WRITER = None
 _GLOBAL_WANDB_WRITER = None
@@ -22,26 +23,13 @@ _GLOBAL_ONE_LOGGER = None
 _GLOBAL_ADLR_AUTORESUME = None
 _GLOBAL_TIMERS = None
 _GLOBAL_SIGNAL_HANDLER = None
-_GLOBAL_HETERO_CONTEXT = None
-_GLOBAL_DEVICE_TYPE = None
+_GLOBAL_PARALLEL_CONTEXT = None
+
 
 def get_args():
     """Return arguments."""
     _ensure_var_is_initialized(_GLOBAL_ARGS, 'args')
     return _GLOBAL_ARGS
-
-
-def get_num_microbatches():
-    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get()
-
-
-def get_current_global_batch_size():
-    return _GLOBAL_NUM_MICROBATCHES_CALCULATOR.get_current_global_batch_size()
-
-
-def update_num_microbatches(consumed_samples, consistency_check=True):
-    _GLOBAL_NUM_MICROBATCHES_CALCULATOR.update(consumed_samples,
-                                               consistency_check)
 
 
 def get_tokenizer():
@@ -84,12 +72,6 @@ def get_signal_handler():
     return _GLOBAL_SIGNAL_HANDLER
 
 
-def get_hetero_context():
-    """Return heterogenous context."""
-    _ensure_var_is_initialized(_GLOBAL_HETERO_CONTEXT, 'hetero context')
-    return _GLOBAL_HETERO_CONTEXT
-
-
 def _set_signal_handler():
     global _GLOBAL_SIGNAL_HANDLER
     _ensure_var_is_not_initialized(_GLOBAL_SIGNAL_HANDLER, 'signal handler')
@@ -104,7 +86,14 @@ def set_global_variables(args, build_tokenizer=True):
     _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
     set_args(args)
 
-    _build_num_microbatches_calculator(args)
+    init_num_microbatches_calculator(
+        args.rank,
+        args.rampup_batch_size,
+        args.global_batch_size,
+        args.micro_batch_size,
+        args.data_parallel_size,
+        args.decrease_batch_size_if_needed,
+    )
     if build_tokenizer:
         _ = _build_tokenizer(args)
     _set_adlr_autoresume(args)
@@ -132,33 +121,56 @@ def set_global_writers(args):
 
     # build wandb writers for all processes in the dp group of the last rank 
     from megatron.core import mpu 
-    size = torch.distributed.get_world_size(mpu.get_model_parallel_group())
-    ranks_tensor = torch.tensor([0 for _ in range(size)], dtype=torch.int, device='cuda')
+    mp_groups = mpu.get_model_parallel_group()
+    if not isinstance(mp_groups, list):
+        mp_groups = [mp_groups]
+    size = torch.distributed.get_world_size(mp_groups[-1])
+    comm_device = get_device_type_for_comm(mp_groups)
+    ranks_tensor = torch.tensor([0 for _ in range(size)], dtype=torch.int, device=comm_device)
+    orig_ranks = torch.tensor([i for i in range(size)], dtype=torch.int, device=comm_device)
     if is_last_rank():
-        ranks_list = torch.distributed.get_process_group_ranks(mpu.get_model_parallel_group())
-        ranks_tensor = torch.tensor(ranks_list, dtype=torch.int, device='cuda') 
-    torch.distributed.all_reduce(ranks_tensor)
+        ranks_tensor = orig_ranks
+        ranks_list = torch.distributed.get_process_group_ranks(mp_groups[-1])
+        ranks_tensor = torch.tensor(ranks_list, dtype=torch.int, device=comm_device) 
+    for group in mp_groups:
+        ranks_tensor = orig_ranks
+        torch.distributed.all_reduce(ranks_tensor, group=group)
     if torch.distributed.get_rank() in ranks_tensor.tolist(): 
         _set_wandb_writer(args)
+
+
+def unset_global_variables():
+    """Unset global vars.
+
+    Useful for multiple runs. See `tests/unit_tests/ckpt_converter/test_ckpt_converter.py` for an example.
+    """
+
+    global _GLOBAL_ARGS
+    global _GLOBAL_NUM_MICROBATCHES_CALCULATOR
+    global _GLOBAL_TOKENIZER
+    global _GLOBAL_TENSORBOARD_WRITER
+    global _GLOBAL_WANDB_WRITER
+    global _GLOBAL_ONE_LOGGER
+    global _GLOBAL_ADLR_AUTORESUME
+    global _GLOBAL_TIMERS
+    global _GLOBAL_SIGNAL_HANDLER
+
+    _GLOBAL_ARGS = None
+    _GLOBAL_NUM_MICROBATCHES_CALCULATOR = None
+    _GLOBAL_TOKENIZER = None
+    _GLOBAL_TENSORBOARD_WRITER = None
+    _GLOBAL_WANDB_WRITER = None
+    _GLOBAL_ONE_LOGGER = None
+    _GLOBAL_ADLR_AUTORESUME = None
+    _GLOBAL_TIMERS = None
+    _GLOBAL_SIGNAL_HANDLER = None
+
+    unset_num_microbatches_calculator()
 
 
 def set_args(args):
     global _GLOBAL_ARGS
     _GLOBAL_ARGS = args
-
-
-def _build_num_microbatches_calculator(args):
-
-    global _GLOBAL_NUM_MICROBATCHES_CALCULATOR
-    _ensure_var_is_not_initialized(_GLOBAL_NUM_MICROBATCHES_CALCULATOR,
-                                   'num microbatches calculator')
-
-    if args.hetero_mode != "dp":
-        _GLOBAL_NUM_MICROBATCHES_CALCULATOR = build_num_microbatches_calculator(
-            args)
-    else:
-        _GLOBAL_NUM_MICROBATCHES_CALCULATOR = build_num_microbatches_calculator_hetero(
-            args)
 
 
 def _build_tokenizer(args):
@@ -238,21 +250,25 @@ def _set_one_logger(args):
     global _GLOBAL_ONE_LOGGER
     _ensure_var_is_not_initialized(_GLOBAL_ONE_LOGGER, 'one logger')
 
-    if args.enable_one_logger:
+    if args.enable_one_logger and args.rank == (args.world_size - 1):
+        if args.one_logger_async or getattr(args, 'wandb_project', ''):
+            one_logger_async = True
+        else:
+            one_logger_async = False
         try:
-            from one_logger.core import OneLogger
+            from one_logger import OneLogger
             config = {
                'project': args.one_logger_project,
-               'entity': args.one_logger_entity,
-               'name': args.one_logger_run_name
+               'name': args.one_logger_run_name,
+               'async': one_logger_async,
             }
             one_logger = OneLogger(config=config)
             _GLOBAL_ONE_LOGGER = one_logger
-        except BaseException:
+        except Exception:
             print('WARNING: one_logger package is required to enable e2e metrics '
-                  'tracking. Try pip install '
-                  '--index-url=https://sc-hw-artf.nvidia.com/api/pypi/hwinf-ml-pypi/simple'
-                  ' one_logger to install it')
+                  'tracking. please go to '
+                  'https://confluence.nvidia.com/display/MLWFO/Package+Repositories'
+                  ' for details to install it')
 
 def _set_adlr_autoresume(args):
     """Initialize ADLR autoresume."""
@@ -265,7 +281,7 @@ def _set_adlr_autoresume(args):
         sys.path.append(os.environ.get('SUBMIT_SCRIPTS', '.'))
         try:
             from userlib.auto_resume import AutoResume
-        except BaseException:
+        except ImportError:
             print('ADLR autoresume is not available, exiting ...')
             sys.exit()
 
@@ -279,13 +295,6 @@ def _set_timers(args):
     _GLOBAL_TIMERS = Timers(args.timing_log_level, args.timing_log_option)
 
 
-def set_hetero_context(args):
-    """Initialize heterogenous context."""
-    global _GLOBAL_HETERO_CONTEXT
-    _ensure_var_is_not_initialized(_GLOBAL_HETERO_CONTEXT, 'hetero context')
-    _GLOBAL_HETERO_CONTEXT = HeteroContext(args)
-
-
 def _ensure_var_is_initialized(var, name):
     """Make sure the input variable is not None."""
     assert var is not None, '{} is not initialized.'.format(name)
@@ -296,21 +305,27 @@ def _ensure_var_is_not_initialized(var, name):
     assert var is None, '{} is already initialized.'.format(name)
 
 
-def set_device_type(args):
-    """Initialize customized device type."""
-    global _GLOBAL_DEVICE_TYPE
-    _ensure_var_is_not_initialized(_GLOBAL_DEVICE_TYPE, 'device type')
-    assert args.device_type is not None
-    _GLOBAL_DEVICE_TYPE = args.device_type
+def destroy_global_vars():
+    global _GLOBAL_ARGS
+    _GLOBAL_ARGS = None
 
-    # Add patches package of device_type to sys.path
-    base_base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    path_hard = os.path.join(base_base_path,"hardwares") 
-    path = os.path.join(path_hard,args.device_type)
-    assert os.path.exists(path), "Path {} does not exist.".format(path) 
-    assert os.path.isdir(path), "Path {} is not a directory.".format(path)
-    sys.path.append(path)
-    
-    # Apply the following patch during the import time
-    import patches
+    global _GLOBAL_TOKENIZER
+    _GLOBAL_TOKENIZER = None
 
+    global _GLOBAL_TENSORBOARD_WRITER
+    _GLOBAL_TENSORBOARD_WRITER = None
+
+    global _GLOBAL_WANDB_WRITER
+    _GLOBAL_WANDB_WRITER = None
+
+    global _GLOBAL_ONE_LOGGER
+    _GLOBAL_ONE_LOGGER = None
+
+    global _GLOBAL_ADLR_AUTORESUME
+    _GLOBAL_ADLR_AUTORESUME = None
+
+    global _GLOBAL_TIMERS
+    _GLOBAL_TIMERS = None
+
+    global _GLOBAL_SIGNAL_HANDLER
+    _GLOBAL_SIGNAL_HANDLER = None

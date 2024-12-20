@@ -1,18 +1,8 @@
-cmake >= 3.21
-hydra-core
-ninja
-psutil
-numpy
-requests
-py-cpuinfo
-sentencepiece
-transformers >= 4.40.0
-tokenizers >= 0.19.1
-tiktoken >= 0.6.0
-ray >= 2.9
-matplotlib
-py3nvml
-graphviz
-tqdm
-mpi4py
-nvidia-ml-py
+# Megatron-LM
+-r megatron/requirements-cuda.txt
+
+# vllm
+-r vllm/requirements-cuda.txt
+
+# flagscale
+-r flagscale/requirements-common.txt

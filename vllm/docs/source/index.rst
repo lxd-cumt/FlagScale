@@ -31,19 +31,21 @@ vLLM is fast with:
 * Efficient management of attention key and value memory with **PagedAttention**
 * Continuous batching of incoming requests
 * Fast model execution with CUDA/HIP graph
-* Quantization: `GPTQ <https://arxiv.org/abs/2210.17323>`_, `AWQ <https://arxiv.org/abs/2306.00978>`_, `SqueezeLLM <https://arxiv.org/abs/2306.07629>`_, FP8 KV Cache
-* Optimized CUDA kernels
+* Quantization: `GPTQ <https://arxiv.org/abs/2210.17323>`_, `AWQ <https://arxiv.org/abs/2306.00978>`_, INT4, INT8, and FP8
+* Optimized CUDA kernels, including integration with FlashAttention and FlashInfer.
+* Speculative decoding
+* Chunked prefill
 
 vLLM is flexible and easy to use with:
 
 * Seamless integration with popular HuggingFace models
 * High-throughput serving with various decoding algorithms, including *parallel sampling*, *beam search*, and more
-* Tensor parallelism support for distributed inference
+* Tensor parallelism and pipeline parallelism support for distributed inference
 * Streaming outputs
 * OpenAI-compatible API server
-* Support NVIDIA GPUs and AMD GPUs
-* (Experimental) Prefix caching support
-* (Experimental) Multi-lora support
+* Support NVIDIA GPUs, AMD CPUs and GPUs, Intel CPUs, Gaudi® accelerators and GPUs, PowerPC CPUs, TPU, and AWS Trainium and Inferentia Accelerators.
+* Prefix caching support
+* Multi-lora support
 
 For more information, check out the following:
 
@@ -51,7 +53,6 @@ For more information, check out the following:
 * `vLLM paper <https://arxiv.org/abs/2309.06180>`_ (SOSP 2023)
 * `How continuous batching enables 23x throughput in LLM inference while reducing p50 latency <https://www.anyscale.com/blog/continuous-batching-llm-inference>`_ by Cade Daniel et al.
 * :ref:`vLLM Meetups <meetups>`.
-
 
 
 Documentation
@@ -63,17 +64,16 @@ Documentation
 
    getting_started/installation
    getting_started/amd-installation
-   getting_started/neuron-installation
+   getting_started/openvino-installation
    getting_started/cpu-installation
+   getting_started/gaudi-installation
+   getting_started/arm-installation
+   getting_started/neuron-installation
+   getting_started/tpu-installation
+   getting_started/xpu-installation
    getting_started/quickstart
+   getting_started/debugging
    getting_started/examples/examples_index
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Offline Inference
-
-   offline_inference/llm
-   offline_inference/sampling_params
 
 .. toctree::
    :maxdepth: 1
@@ -81,11 +81,12 @@ Documentation
 
    serving/openai_compatible_server
    serving/deploying_with_docker
+   serving/deploying_with_k8s
+   serving/deploying_with_nginx
    serving/distributed_serving
    serving/metrics
-   serving/env_vars
-   serving/usage_stats
    serving/integrations
+   serving/tensorizer
 
 .. toctree::
    :maxdepth: 1
@@ -93,32 +94,91 @@ Documentation
 
    models/supported_models
    models/adding_model
-   models/engine_args
-   models/lora
-   models/performance
+   models/enabling_multimodal_inputs
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Usage
+
+   usage/lora
+   usage/multimodal_inputs
+   usage/structured_outputs
+   usage/spec_decode
+   usage/compatibility_matrix
+   usage/performance
+   usage/faq
+   usage/engine_args
+   usage/env_vars
+   usage/usage_stats
 
 .. toctree::
    :maxdepth: 1
    :caption: Quantization
 
+   quantization/supported_hardware
    quantization/auto_awq
+   quantization/bnb
+   quantization/gguf
+   quantization/int8
+   quantization/fp8
    quantization/fp8_e5m2_kvcache
    quantization/fp8_e4m3_kvcache
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Developer Documentation
+   :maxdepth: 1
+   :caption: Automatic Prefix Caching
 
-   dev/engine/engine_index
-   dev/kernel/paged_attention
-   dev/dockerfile/dockerfile
+   automatic_prefix_caching/apc
+   automatic_prefix_caching/details
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :caption: Performance
+
+   performance/benchmarks
+
+.. Community: User community resources
+
+.. toctree::
+   :maxdepth: 1
    :caption: Community
 
    community/meetups
    community/sponsors
+
+.. API Documentation: API reference aimed at vllm library usage
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Documentation
+
+   dev/sampling_params
+   dev/pooling_params
+   dev/offline_inference/offline_index
+   dev/engine/engine_index
+
+.. Design: docs about vLLM internals
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Design
+
+   design/arch_overview
+   design/huggingface_integration
+   design/plugin_system
+   design/input_processing/model_inputs_index
+   design/kernel/paged_attention
+   design/multimodal/multimodal_index
+
+.. For Developers: contributing to the vLLM project
+
+.. toctree::
+   :maxdepth: 2
+   :caption: For Developers
+
+   contributing/overview
+   contributing/profiling/profiling_index
+   contributing/dockerfile/dockerfile
 
 Indices and tables
 ==================

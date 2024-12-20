@@ -2,7 +2,6 @@
 
 import torch
 from torch import nn
-from torch.nn import init
 
 class RMSNorm(torch.nn.Module):
 
@@ -10,7 +9,7 @@ class RMSNorm(torch.nn.Module):
                  dim: int,
                  eps: float = 1e-6,
                  sequence_parallel: bool = False,
-                 init_weight: float = None):
+                 config: dict = None):
         """RMS Normaliation module
 
         Args:
@@ -22,11 +21,6 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
-
-        if init_weight:
-            init.constant_(self.weight, init_weight)
-        else:
-            init.ones_(self.weight)
 
         setattr(self.weight, 'sequence_parallel', sequence_parallel)
 

@@ -8,3 +8,6 @@ slurm*
 logs
 .vscode
 log_file/*
+outputs
+*.log
+*.out

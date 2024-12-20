@@ -1,25 +1,12 @@
-# build tools
-packaging
-setuptools>=49.4.0
-wheel
+# Megatron-LM
+-r megatron/requirements-cuda.txt
+-r megatron/requirements-dev.txt
 
-# testing
-pytest
-pytest_mock
-pytest-cov
-pytest-forked
-pytest-asyncio
-pytest-rerunfailures
-pytest-shard
+# vllm
+-r vllm/requirements-cuda.txt
+-r vllm/requirements-dev.txt
+-r vllm/requirements-build.txt
 
-# formatting
-black==24.4.2
-codespell==2.2.6
-isort==5.13.2
-clang-format==18.1.5
-
-# type checking
-mypy==1.10.0
-
-# pre-commit
-pre-commit>=2.20.0
+# flagscale
+-r flagscale/requirements-common.txt
+-r flagscale/requirements-dev.txt

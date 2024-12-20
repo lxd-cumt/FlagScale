@@ -17,7 +17,7 @@ def add_arguments(parser):
                        help='Path to the vocab file. If specified will use this to get vocab size and '
                        'trim padding from the embedding table.')
     group.add_argument('--megatron-path', type=str, default=None,
-                       help='Base directory of deepspeed repository')
+                       help='Base directory of Megatron repository')
     group.add_argument('--position-embedding-type',
                        type=str,
                        default='learned_absolute',
@@ -61,13 +61,16 @@ def _load_checkpoint(queue, args):
                 '--no-load-rng',
                 '--no-save-optim',
                 '--no-save-rng',
+                '--mock-data', # To pass the "blend data checks" in arguments.py
                 '--no-initialization',
                 '--load', args.load_dir,
                 '--position-embedding-type', args.position_embedding_type,
+                '--exit-on-missing-checkpoint',
+                '--no-one-logger',
                 ]
 
     margs = parse_args()
-    margs, checkpoint_args = load_args_from_checkpoint(margs, exit_on_missing_checkpoint=True)
+    margs, checkpoint_args = load_args_from_checkpoint(margs)
 
     # Arguments do sanity checks on the world size, but we don't care,
     # so trick it into thinking we are plenty of processes
@@ -80,7 +83,7 @@ def _load_checkpoint(queue, args):
     # Validate margs.
     margs = validate_args(margs)
 
-    margs.use_mcore_models = False
+    margs.use_legacy_models = True
     margs.transformer_impl = args.loader_transformer_impl
 
     def check_for_arg(arg_name, default=None):
@@ -216,7 +219,7 @@ def _load_checkpoint(queue, args):
     md.output_layer = margs.untie_embeddings_and_output_weights
     md.position_embedding_type = margs.position_embedding_type
     md.linear_bias = margs.add_bias_linear
-    md.linear_bias_qkv = margs.add_qkv_bias
+    md.qkv_bias = margs.add_qkv_bias
     md.norm_has_bias = norm_has_bias
     md.swiglu = margs.swiglu
     md.previous_tensor_parallel_size = margs.tensor_model_parallel_size
@@ -289,7 +292,7 @@ def _load_checkpoint(queue, args):
                     dense_weight.append(layer.self_attention.dense.weight.data)
                     mlp_l0_weight.append(layer.mlp.dense_h_to_4h.weight.data)
                     mlp_l1_weight.append(layer.mlp.dense_4h_to_h.weight.data)
-                    if md.linear_bias or md.linear_bias_qkv:
+                    if md.qkv_bias:
                         qkv_bias.append(layer.self_attention.query_key_value.bias.data)
                     if md.linear_bias:
                         mlp_l0_bias.append(layer.mlp.dense_h_to_4h.bias.data)
@@ -308,7 +311,7 @@ def _load_checkpoint(queue, args):
                 message["qkv weight"] = torch.cat(qkv_weight, dim=0)
                 message["dense weight"] = torch.cat(dense_weight, dim=1)
                 message["mlp l1 weight"] = torch.cat(mlp_l1_weight, dim=1)
-                if md.linear_bias or md.linear_bias_qkv:
+                if md.qkv_bias:
                     message["qkv bias"] = torch.cat(qkv_bias, dim=0)
                 if md.linear_bias:
                     if md.swiglu:
@@ -368,6 +371,6 @@ def _load_checkpoint(queue, args):
 def load_checkpoint(queue, args):
     try:
         _load_checkpoint(queue, args)
-    except:
+    except Exception:
         queue.put("exit")
         raise

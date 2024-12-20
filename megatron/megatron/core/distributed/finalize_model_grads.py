@@ -1,13 +1,110 @@
 # Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 
+try:
+    from torch.distributed._tensor import DTensor, distribute_tensor
+
+    HAVE_DTENSOR = True
+except ImportError:
+    HAVE_DTENSOR = False
+
 from .. import parallel_state
 from ..transformer.transformer_config import TransformerConfig
 from ..utils import get_attr_wrapped_model, get_model_config
+
+
+def _unshard_if_dtensor(tensor: Union[torch.Tensor, "DTensor"]) -> torch.Tensor:
+    """
+    Unshards the input tensor if it is a DTensor and otherwise returns the
+    tensor unmodified.
+
+    Args:
+        tensor (Union[torch.Tensor, DTensor]): The tensor to potentially unshard.
+
+    Returns:
+        An unsharded version of the input tensor if it is a DTensor, or the
+        input tensor unmodified if it is not a DTensor.
+    """
+    if HAVE_DTENSOR and isinstance(tensor, DTensor):
+        unsharded_tensor = tensor.full_tensor()
+        for k, v in vars(tensor).items():
+            setattr(unsharded_tensor, k, v)
+        return unsharded_tensor
+    return tensor
+
+
+def _reshard_if_dtensor(
+    tensor_to_shard: torch.Tensor, reference_tensor: Union[torch.Tensor, "DTensor"]
+) -> Union[torch.Tensor, "DTensor"]:
+    """
+    Reshards the input tensor to match the sharding configuration of the
+    reference tensor if the reference tensor is a DTensor. Otherwise, returns
+    the reference tensor unmodified.
+
+    Args:
+        tensor_to_shard (torch.Tensor): The tensor to be potentially sharded.
+        reference_tensor (Union[torch.Tensor, DTensor]): The reference tensor
+            for the sharding configuration.
+
+    Returns:
+        Union[torch.Tensor, DTensor]: The sharded tensor matching the reference tensor's
+        configuration, or the reference tensor itself if it is not a DTensor.
+    """
+    if HAVE_DTENSOR and isinstance(reference_tensor, DTensor):
+        sharded_tensor = distribute_tensor(
+            tensor_to_shard,
+            device_mesh=reference_tensor.device_mesh,
+            placements=reference_tensor.placements,
+        )
+        for k, v in vars(reference_tensor).items():
+            setattr(sharded_tensor, k, v)
+        return sharded_tensor
+    return reference_tensor
+
+
+def _allreduce_conditional_embedding_grads(model: List[torch.nn.Module], config: TransformerConfig):
+    """
+    All-reduce conditional embedding grads.
+
+    Reduce grads across all the pp stages to ensure that parameters of the conditional embedders
+    (e.g., timestep embedder, FPS embedder, label embedder) stay in sync.
+    This is for the models with replicated embedders on each PP / VPP rank, like diffusion models.
+    """
+
+    if parallel_state.get_pipeline_model_parallel_world_size() > 1 and getattr(
+        config, "has_cond_embedder", False
+    ):
+        grads_dict = {}
+        for model_chunk in model:
+            for name, param in get_attr_wrapped_model(model_chunk, 'named_parameters')():
+                if param.requires_grad and getattr(param, 'pipeline_parallel', False):
+                    grad = param.main_grad
+                    if name in grads_dict:
+                        # Add all the virtual PP rank's gradients to
+                        # the first local virtual PP rank.
+                        grads_dict[name][0].add_(grad)
+                        # Append to the end for later update after cross-rank reduce.
+                        grads_dict[name].append(grad)
+                    else:
+                        grads_dict[name] = [grad]
+        if grads_dict:
+            # All-reduce the gradient on the first VPP rank.
+            grads = [param_grad[0] for _, param_grad in grads_dict.items()]
+            coalesced = _flatten_dense_tensors(grads)
+            torch.distributed.all_reduce(
+                coalesced, group=parallel_state.get_pipeline_model_parallel_group()
+            )
+            for buf, synced in zip(grads, _unflatten_dense_tensors(coalesced, grads)):
+                buf.copy_(synced)
+
+            # Update the gradients on other VPP ranks.
+            for grads in grads_dict.values():
+                for grad in grads[1:]:
+                    grad.copy_(grads[0])
 
 
 def _allreduce_word_embedding_grads(model: List[torch.nn.Module], config: TransformerConfig):
@@ -15,48 +112,54 @@ def _allreduce_word_embedding_grads(model: List[torch.nn.Module], config: Transf
     All-reduce word embedding grads.
 
     Reduce grads across first and last stages to ensure that word_embeddings parameters stay in
-    sync. This should only run for models that support pipelined model parallelism (BERT and GPT).
+    sync.
     """
 
     if (
         parallel_state.is_rank_in_embedding_group(ignore_virtual=True)
-        and parallel_state.get_pipeline_model_parallel_world_size() > 1
+        and torch.distributed.get_world_size(parallel_state.get_embedding_group()) > 1
     ):
         if parallel_state.is_pipeline_first_stage(ignore_virtual=True):
             model_module = model[0]
         elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
             model_module = model[-1]
-        else:  # We do not support the interleaved schedule for T5 yet.
+        else:  # We do not support an interleaved schedule for models with encoders yet.
             model_module = model[0]
 
-        # Look for module with 'pre_process' attribute to get around the fact that DDP and
-        # other wrapper classes inherit from non-core MegatronModule that has
-        # 'share_embeddings_and_output_weights' and 'shared_embedding_or_output_weight'
-        # attributes already, causing get_attr_wrapped_model() to not unwrap anything here.
-        # TODO: Clean this up once the wrapper classes inherit from core MegatronModule.
         model_module = get_attr_wrapped_model(model_module, 'pre_process', return_model_obj=True)
         if model_module.share_embeddings_and_output_weights:
             weight = model_module.shared_embedding_or_output_weight()
-            grad = weight.main_grad
+            grad_attr = "main_grad" if hasattr(weight, "main_grad") else "grad"
+            orig_grad = getattr(weight, grad_attr)
+            grad = _unshard_if_dtensor(orig_grad)
             torch.distributed.all_reduce(grad, group=parallel_state.get_embedding_group())
+            setattr(weight, grad_attr, _reshard_if_dtensor(grad, orig_grad))
 
 
 def _allreduce_position_embedding_grads(model: List[torch.nn.Module], config: TransformerConfig):
     """
-    All-reduce position_embeddings grad across first (encoder) and split (decoder) stages to
-    ensure that position embeddings parameters stay in sync. This should only run for T5 models
-    with pipeline parallelism.
+    All-reduce position_embeddings grad across encoder and decoder stages to ensure that position
+    embeddings parameters stay in sync.
     """
     if (
         parallel_state.is_rank_in_position_embedding_group()
-        and parallel_state.get_pipeline_model_parallel_world_size() > 1
-        and config.pipeline_model_parallel_split_rank is not None
+        and torch.distributed.get_world_size(parallel_state.get_position_embedding_group()) > 1
     ):
-        model_module = model[0]
-        grad = get_attr_wrapped_model(
-            model_module, 'language_model.embedding.position_embeddings.weight.main_grad'
-        )
+        if parallel_state.is_pipeline_first_stage(ignore_virtual=True):
+            model_module = model[0]
+        elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+            model_module = model[-1]
+        else:  # We do not support an interleaved schedule for models with encoders yet.
+            model_module = model[0]
+
+        model_module = get_attr_wrapped_model(model_module, 'pre_process', return_model_obj=True)
+        assert hasattr(model_module, 'position_embeddings')
+        weight = model_module.position_embeddings.weight
+        grad_attr = "main_grad" if hasattr(weight, "main_grad") else "grad"
+        orig_grad = getattr(weight, grad_attr)
+        grad = _unshard_if_dtensor(orig_grad)
         torch.distributed.all_reduce(grad, group=parallel_state.get_position_embedding_group())
+        setattr(weight, grad_attr, _reshard_if_dtensor(grad, orig_grad))
 
 
 def _allreduce_embedding_grads(model: List[torch.nn.Module], config: TransformerConfig):
@@ -77,25 +180,35 @@ def _allreduce_layernorm_grads(model: List[torch.nn.Module], config: Transformer
     if parallel_state.get_tensor_model_parallel_world_size() > 1 and (
         config.sequence_parallel or config.qk_layernorm
     ):
+        params = []
         grads = []
         for model_chunk in model:
             for name, param in get_attr_wrapped_model(model_chunk, 'named_parameters')():
                 if not param.requires_grad:
                     continue
                 if (
-                    getattr(param, 'sequence_parallel', False)
+                    param.requires_grad
+                    and getattr(param, 'sequence_parallel', False)
                     or 'q_layernorm' in name
                     or 'k_layernorm' in name
                 ):
-                    grad = param.main_grad
+                    params.append(param)
+                    grad_attr = "main_grad" if hasattr(param, "main_grad") else "grad"
+                    grad = getattr(param, grad_attr)
+                    grad = _unshard_if_dtensor(grad)
                     grads.append(grad.data)
         if grads:
             coalesced = _flatten_dense_tensors(grads)
             torch.distributed.all_reduce(
                 coalesced, group=parallel_state.get_tensor_model_parallel_group()
             )
-            for buf, synced in zip(grads, _unflatten_dense_tensors(coalesced, grads)):
+            for param, buf, synced in zip(
+                params, grads, _unflatten_dense_tensors(coalesced, grads)
+            ):
                 buf.copy_(synced)
+                grad_attr = "main_grad" if hasattr(param, "main_grad") else "grad"
+                orig_grad = getattr(param, grad_attr)
+                setattr(param, grad_attr, _reshard_if_dtensor(buf, orig_grad))
 
 
 def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torch.Tensor] = None):
@@ -114,6 +227,15 @@ def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torc
         model_chunk.finish_grad_sync()
     if config.timers is not None:
         config.timers('all-grads-sync').stop()
+
+    # All-reduce t_embedder grads (for pp & vpp of DiT).
+    if config.timers is not None:
+        config.timers('conditional-embedder-grads-all-reduce', log_level=1).start(
+            barrier=config.barrier_with_L1_time
+        )
+    _allreduce_conditional_embedding_grads(model, config)
+    if config.timers is not None:
+        config.timers('conditional-embedder-grads-all-reduce').stop()
 
     # All-reduce layer-norm grads (for sequence parallelism).
     if config.timers is not None:
@@ -137,13 +259,36 @@ def finalize_model_grads(model: List[torch.nn.Module], num_tokens: Optional[torc
     # if we are using by the number of tokens, then we use that as a divisor. this number
     # will be the total number of non-padded tokens in the global batch.
     if num_tokens is not None:
+
         # the number of tokens is only present on the last stage, so broadcast it
         # to the other ranks in the pipeline parallel group.
-        torch.distributed.broadcast(
-            num_tokens,
-            src=parallel_state.get_pipeline_model_parallel_last_rank(),
-            group=parallel_state.get_pipeline_model_parallel_group(),
-        )
+        last_rank = parallel_state.get_pipeline_model_parallel_last_rank()
+        pp_group = parallel_state.get_pipeline_model_parallel_group()
+        
+        # NOTE: This is a hack to support multiple pipeline parallel groups. The origin
+        #       parallel_state.get_pipeline_model_parallel_last_rank() only supports a single
+        if isinstance(pp_group, list):
+            last_rank = [parallel_state.get_pipeline_model_parallel_last_rank(g) for g in pp_group]
+
+        if not isinstance(last_rank, list):
+            assert not isinstance(last_rank, list)
+            last_rank = [last_rank]
+            assert not isinstance(pp_group, list)
+            pp_group = [pp_group]
+
+        # need to do a broadcast for every pp group, even though num_tokens should be the same.
+        if "gloo" in pp_group[0].name():
+            num_tokens = num_tokens.cpu()
+
+        num_tokens_list = []
+        for lr, group in zip(last_rank, pp_group):
+            torch.distributed.broadcast(num_tokens, src=lr, group=group)
+            num_tokens_list.append(torch.clone(num_tokens))
+        assert all(x.item() == num_tokens_list[0] for x in num_tokens_list)
+        
+        if num_tokens.device == torch.device('cpu'):
+            num_tokens = num_tokens.cuda()
+
         # all-reduce across DP ranks.
         torch.distributed.all_reduce(num_tokens, group=parallel_state.get_data_parallel_group())
         for model_chunk in model:

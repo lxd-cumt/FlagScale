@@ -230,7 +230,7 @@ def quantize_model(model, quant_cfg, calib_dataloader=None):
 
 def main(args):
     if not torch.cuda.is_available():
-        raise EnvironmentError("GPU is required for inference.")
+        raise OSError("GPU is required for inference.")
 
     random.seed(RAND_SEED)
     np.random.seed(RAND_SEED)
@@ -314,7 +314,7 @@ def main(args):
 
             # Workaround for wo quantization
             if args.qformat in ["int8_wo", "int4_wo", "full_prec"]:
-                with open(f"{export_path}/config.json", 'r') as f:
+                with open(f"{export_path}/config.json") as f:
                     tensorrt_llm_config = json.load(f)
                 if args.qformat == "int8_wo":
                     tensorrt_llm_config["quantization"]["quant_algo"] = 'W8A16'
@@ -332,7 +332,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model_dir",
+    parser.add_argument("--model-dir",
                         help="Specify where the HuggingFace model is",
                         required=True)
     parser.add_argument("--device", default="cuda")
@@ -346,19 +346,19 @@ if __name__ == "__main__":
             "full_prec"
         ],
     )
-    parser.add_argument("--batch_size",
+    parser.add_argument("--batch-size",
                         help="Batch size for calibration.",
                         type=int,
                         default=1)
-    parser.add_argument("--calib_size",
+    parser.add_argument("--calib-size",
                         help="Number of samples for calibration.",
                         type=int,
                         default=512)
-    parser.add_argument("--output_dir", default="exported_model")
-    parser.add_argument("--tp_size", type=int, default=1)
-    parser.add_argument("--pp_size", type=int, default=1)
-    parser.add_argument("--awq_block_size", type=int, default=128)
-    parser.add_argument("--kv_cache_dtype",
+    parser.add_argument("--output-dir", default="exported_model")
+    parser.add_argument("--tp-size", type=int, default=1)
+    parser.add_argument("--pp-size", type=int, default=1)
+    parser.add_argument("--awq-block-size", type=int, default=128)
+    parser.add_argument("--kv-cache-dtype",
                         help="KV Cache dtype.",
                         default=None,
                         choices=["int8", "fp8", None])

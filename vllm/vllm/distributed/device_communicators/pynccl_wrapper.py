@@ -28,7 +28,7 @@ import torch
 from torch.distributed import ReduceOp
 
 from vllm.logger import init_logger
-from vllm.utils import find_nccl_library, nccl_integrity_check
+from vllm.utils import find_nccl_library
 
 logger = init_logger(__name__)
 
@@ -151,6 +151,28 @@ class NCCLLibrary:
             ncclRedOp_t, ncclComm_t, cudaStream_t
         ]),
 
+        # ncclResult_t  ncclAllGather(
+        #   const void* sendbuff, void* recvbuff, size_t count,
+        #   ncclDataType_t datatype, ncclComm_t comm,
+        #   cudaStream_t stream);
+        # note that cudaStream_t is a pointer type, so the last argument
+        # is a pointer
+        Function("ncclAllGather", ncclResult_t, [
+            buffer_type, buffer_type, ctypes.c_size_t, ncclDataType_t,
+            ncclComm_t, cudaStream_t
+        ]),
+
+        # ncclResult_t  ncclReduceScatter(
+        #   const void* sendbuff, void* recvbuff, size_t count,
+        #   ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm,
+        #   cudaStream_t stream);
+        # note that cudaStream_t is a pointer type, so the last argument
+        # is a pointer
+        Function("ncclReduceScatter", ncclResult_t, [
+            buffer_type, buffer_type, ctypes.c_size_t, ncclDataType_t,
+            ncclRedOp_t, ncclComm_t, cudaStream_t
+        ]),
+
         # ncclResult_t  ncclSend(
         #   const void* sendbuff, size_t count, ncclDataType_t datatype,
         #   int dest, ncclComm_t comm, cudaStream_t stream);
@@ -165,6 +187,15 @@ class NCCLLibrary:
         Function("ncclRecv", ncclResult_t, [
             buffer_type, ctypes.c_size_t, ncclDataType_t, ctypes.c_int,
             ncclComm_t, cudaStream_t
+        ]),
+
+        # ncclResult_t ncclBroadcast(
+        #   const void* sendbuff, void* recvbuff, size_t count,
+        #   ncclDataType_t datatype, int root, ncclComm_t comm,
+        #   cudaStream_t stream);
+        Function("ncclBroadcast", ncclResult_t, [
+            buffer_type, buffer_type, ctypes.c_size_t, ncclDataType_t,
+            ctypes.c_int, ncclComm_t, cudaStream_t
         ]),
 
         # be cautious! this is a collective call, it will block until all
@@ -188,30 +219,24 @@ class NCCLLibrary:
         so_file = so_file or find_nccl_library()
 
         try:
-            # load the library in another process.
-            # if it core dumps, it will not crash the current process
-            nccl_integrity_check(so_file)
+            if so_file not in NCCLLibrary.path_to_dict_mapping:
+                lib = ctypes.CDLL(so_file)
+                NCCLLibrary.path_to_library_cache[so_file] = lib
+            self.lib = NCCLLibrary.path_to_library_cache[so_file]
         except Exception as e:
             logger.error(
                 "Failed to load NCCL library from %s ."
                 "It is expected if you are not running on NVIDIA/AMD GPUs."
                 "Otherwise, the nccl library might not exist, be corrupted "
                 "or it does not support the current platform %s."
-                "One solution is to download libnccl2 version 2.18 from "
-                "https://developer.download.nvidia.com/compute/cuda/repos/ "
-                "and extract the libnccl.so.2 file. If you already have the "
-                "library, please set the environment variable VLLM_NCCL_SO_PATH"
+                "If you already have the library, please set the "
+                "environment variable VLLM_NCCL_SO_PATH"
                 " to point to the correct nccl library path.", so_file,
                 platform.platform())
             raise e
 
         if so_file not in NCCLLibrary.path_to_dict_mapping:
-            lib = ctypes.CDLL(so_file)
-            NCCLLibrary.path_to_library_cache[so_file] = lib
-        self.lib = NCCLLibrary.path_to_library_cache[so_file]
-
-        if so_file not in NCCLLibrary.path_to_dict_mapping:
-            _funcs = {}
+            _funcs: Dict[str, Any] = {}
             for func in NCCLLibrary.exported_functions:
                 f = getattr(self.lib, func.name)
                 f.restype = func.restype
@@ -264,6 +289,28 @@ class NCCLLibrary:
                                                      datatype, op, comm,
                                                      stream))
 
+    def ncclReduceScatter(self, sendbuff: buffer_type, recvbuff: buffer_type,
+                          count: int, datatype: int, op: int, comm: ncclComm_t,
+                          stream: cudaStream_t) -> None:
+        # `datatype` actually should be `ncclDataType_t`
+        # and `op` should be `ncclRedOp_t`
+        # both are aliases of `ctypes.c_int`
+        # when we pass int to a function, it will be converted to `ctypes.c_int`
+        # by ctypes automatically
+        self.NCCL_CHECK(self._funcs["ncclReduceScatter"](sendbuff, recvbuff,
+                                                         count, datatype, op,
+                                                         comm, stream))
+
+    def ncclAllGather(self, sendbuff: buffer_type, recvbuff: buffer_type,
+                      count: int, datatype: int, comm: ncclComm_t,
+                      stream: cudaStream_t) -> None:
+        # `datatype` actually should be `ncclDataType_t`
+        # which is an aliases of `ctypes.c_int`
+        # when we pass int to a function, it will be converted to `ctypes.c_int`
+        # by ctypes automatically
+        self.NCCL_CHECK(self._funcs["ncclAllGather"](sendbuff, recvbuff, count,
+                                                     datatype, comm, stream))
+
     def ncclSend(self, sendbuff: buffer_type, count: int, datatype: int,
                  dest: int, comm: ncclComm_t, stream: cudaStream_t) -> None:
         self.NCCL_CHECK(self._funcs["ncclSend"](sendbuff, count, datatype,
@@ -273,6 +320,13 @@ class NCCLLibrary:
                  src: int, comm: ncclComm_t, stream: cudaStream_t) -> None:
         self.NCCL_CHECK(self._funcs["ncclRecv"](recvbuff, count, datatype, src,
                                                 comm, stream))
+
+    def ncclBroadcast(self, sendbuff: buffer_type, recvbuff: buffer_type,
+                      count: int, datatype: int, root: int, comm: ncclComm_t,
+                      stream: cudaStream_t) -> None:
+        self.NCCL_CHECK(self._funcs["ncclBroadcast"](sendbuff, recvbuff, count,
+                                                     datatype, root, comm,
+                                                     stream))
 
     def ncclCommDestroy(self, comm: ncclComm_t) -> None:
         self.NCCL_CHECK(self._funcs["ncclCommDestroy"](comm))

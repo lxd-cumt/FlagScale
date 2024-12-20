@@ -15,15 +15,87 @@ import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
+from importlib.metadata import version
 from types import TracebackType
-from typing import List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import torch
+from packaging.version import Version as PkgVersion
+
+try:
+    from torch.distributed._tensor import DTensor
+
+    HAVE_DTENSOR = True
+except ImportError:
+    HAVE_DTENSOR = False
 
 from megatron.core import parallel_state
 from megatron.core.dist_checkpointing.mapping import ShardedTensor
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    _torch_version = PkgVersion(torch.__version__)
+except:
+    # This is a WAR for building docs, where torch is not actually imported
+    _torch_version = PkgVersion("0.0.0")
+_te_version = None
+
+
+def get_torch_version():
+    """Get pytorch version from __version__; if not available use pip's. Use caching."""
+
+    def get_torch_version_str():
+        import torch
+
+        if hasattr(torch, '__version__'):
+            return str(torch.__version__)
+        else:
+            return version("torch")
+
+    global _torch_version
+    if _torch_version is None:
+        _torch_version = PkgVersion(get_torch_version_str())
+    return _torch_version
+
+
+def get_te_version():
+    """Get TE version from __version__; if not available use pip's. Use caching."""
+
+    def get_te_version_str():
+        import transformer_engine as te
+
+        if hasattr(te, '__version__'):
+            return str(te.__version__)
+        else:
+            return version("transformer-engine")
+
+    global _te_version
+    if _te_version is None:
+        _te_version = PkgVersion(get_te_version_str())
+    return _te_version
+
+
+def is_te_min_version(version, check_equality=True):
+    """Check if minimum version of `transformer-engine` is installed."""
+    if check_equality:
+        return get_te_version() >= PkgVersion(version)
+    return get_te_version() > PkgVersion(version)
+
+
+def get_torch_version():
+    """Get torch version from __version__."""
+
+    global _torch_version
+    return _torch_version
+
+
+def is_torch_min_version(version, check_equality=True):
+    """Check if minimum version of `torch` is installed."""
+    if check_equality:
+        return get_torch_version() >= PkgVersion(version)
+    return get_torch_version() > PkgVersion(version)
 
 
 def ensure_divisibility(numerator, denominator):
@@ -67,10 +139,20 @@ def get_attr_wrapped_model(model, attr, allow_none=True, return_model_obj=False)
 
 
 def get_model_type(model):
+    """Returns model_type attribute"""
     return get_attr_wrapped_model(model, 'model_type')
 
 
+def get_model_xattn(model):
+    """Returns whether the model has the xattn_needed attribute"""
+    try:
+        return get_attr_wrapped_model(model, 'xattn_needed')
+    except RuntimeError:
+        return False
+
+
 def get_model_config(model):
+    """Returns the config attribute, allowed to return None"""
     return get_attr_wrapped_model(model, 'config', allow_none=False)
 
 
@@ -83,6 +165,9 @@ class GlobalMemoryBuffer:
         self.buffer = {}
 
     def get_tensor(self, tensor_shape, dtype, name):
+        """
+        Returns (potentially) a sub-tensor from the self.buffer for the given shape.
+        """
         required_len = reduce(operator.mul, tensor_shape, 1)
         if (
             self.buffer.get((name, dtype), None) is None
@@ -96,47 +181,49 @@ class GlobalMemoryBuffer:
 
 
 def _kernel_make_viewless_tensor(inp, requires_grad):
-    '''Make a viewless tensor.
+    """Make a viewless tensor.
 
     View tensors have the undesirable side-affect of retaining a reference
     to the originally-viewed tensor, even after manually setting the '.data'
     field. This method creates a new tensor that links to the old tensor's
     data, without linking the viewed tensor, referenced via the '._base'
     field.
-    '''
-    out = torch.empty((1,), dtype=inp.dtype, device=inp.device, requires_grad=requires_grad,)
+    """
+    out = torch.empty((1,), dtype=inp.dtype, device=inp.device, requires_grad=requires_grad)
     out.data = inp.data
     return out
 
 
 class MakeViewlessTensor(torch.autograd.Function):
-    '''
+    """
     Autograd function to make a viewless tensor.
 
     This function should be used in cases where the computation graph needs
     to be propagated, but we only want a viewless tensor (e.g.,
     ParallelTransformer's hidden_states). Call this function by passing
     'keep_graph = True' to 'make_viewless_tensor()'.
-    '''
+    """
 
     @staticmethod
     def forward(ctx, inp, requires_grad):
+        """Runs the fwd pass of _kernel_make_viewless_tensor"""
         return _kernel_make_viewless_tensor(inp, requires_grad)
 
     @staticmethod
     def backward(ctx, grad_output):
+        """No-op"""
         return grad_output, None
 
 
 def make_viewless_tensor(inp, requires_grad, keep_graph):
-    '''
+    """
     Entry-point for creating viewless tensors.
 
     This method should be used, rather than calling 'MakeViewlessTensor'
     or '_kernel_make_viewless_tensor' directly. This method acts as a
     switch for determining if an autograd function or a regular method
     should be used to create the tensor.
-    '''
+    """
 
     # return tensor as-is, if not a 'view'
     if inp._base is None:
@@ -150,8 +237,8 @@ def make_viewless_tensor(inp, requires_grad, keep_graph):
 
 
 def assert_viewless_tensor(tensor, extra_msg=None):
-    '''Assert that a tensor is not a view (i.e., its '._base' field is
-    not set).'''
+    """Assert that a tensor is not a view (i.e., its '._base' field is
+    not set)."""
     if isinstance(tensor, list):
         [assert_viewless_tensor(t) for t in tensor]
         return tensor
@@ -160,17 +247,17 @@ def assert_viewless_tensor(tensor, extra_msg=None):
     assert tensor._base is None, (
         "Ensure tensor._base is None before setting tensor.data or storing "
         "tensor to memory buffer. Otherwise, a memory leak will occur (and "
-        "likely accumulate over iterations). %s"
-    ) % extra_msg
+        f"likely accumulate over iterations). {extra_msg}"
+    )
     return tensor
 
 
 def safely_set_viewless_tensor_data(tensor, new_data_tensor):
-    '''Safely set tensor's '.data' field.
+    """Safely set tensor's '.data' field.
 
     Check first that the tensor is viewless (i.e., '._base' not set). If not,
     raise an exception.
-    '''
+    """
     assert_viewless_tensor(
         tensor,
         extra_msg="FYI, tensor._base has shape %s, and new_data_tensor has shape %s."
@@ -198,10 +285,49 @@ def scaled_init_method_normal(sigma, num_layers):
     return init_
 
 
-def check_param_hashes_across_dp_replicas(model: List[torch.nn.Module]) -> bool:
+def log_single_rank(logger: logging.Logger, *args: Any, rank: int = 0, **kwargs: Any):
+    """If torch distributed is initialized, log only on rank
+
+    Args:
+        logger (logging.Logger): The logger to write the logs
+
+        args (Tuple[Any]): All logging.Logger.log positional arguments
+
+        rank (int, optional): The rank to write on. Defaults to 0.
+
+        kwargs (Dict[str, Any]): All logging.Logger.log keyword arguments
+    """
+    if torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == rank:
+            logger.log(*args, **kwargs)
+    else:
+        logger.log(*args, **kwargs)
+
+
+def log_on_each_pipeline_stage(logger: logging.Logger, *args: Any, **kwargs: Any):
+    """Log on first rank in each pipeline stage
+
+    Args:
+        logger (logging.Logger): The logger to write the logs
+
+        args (Tuple[Any]): All logging.Logger.log positional arguments
+
+        kwargs (Dict[str, Any]): All logging.Logger.log keyword arguments
+    """
+    assert torch.distributed.is_initialized()
+
+    if (
+        parallel_state.get_data_parallel_rank(with_context_parallel=True) == 0
+        and parallel_state.get_tensor_model_parallel_rank() == 0
+    ):
+        logger.log(*args, **kwargs)
+
+
+def check_param_hashes_across_dp_replicas(
+    model: List[torch.nn.Module], cross_check: bool = False
+) -> bool:
     """Computes hashes of all parameters in model, all-gathers hashes across DP replicas,
-    and then checks for equality between the locally-computed hashes and the hashes
-    from DP replica 0.
+    and then checks for equality between the locally-computed hashes and those of other ranks.
 
     NOTE: This function computes SHA-1 hashes on the CPU and thus needs to move all param
     tensors from GPU to CPU first; as a result, this function is not intended to be called
@@ -210,70 +336,117 @@ def check_param_hashes_across_dp_replicas(model: List[torch.nn.Module]) -> bool:
     Args:
         model (List[torch.nn.Module]): List of model chunks whose parameter hashes need to
             be checked.
+        cross_check (bool): If true, will check whether hashes match across all DP replicas.
 
     Returns:
-        True if all param hashes match with corresponding hash on DP replica 0, False
-        otherwise.
+        True if all param hashes match with corresponding hash on DP replica 0 or
+        across all replicas if cross_check is enabled, False otherwise.
     """
 
     # Compute per-parameter hashes on this rank.
-    params = []
-    local_param_hashes = []
+    # Keep track of expert and non-expert parameters separately since they need to be
+    # all-gathered across different sets of ranks.
+    non_expert_params, expert_params = [], []
+    local_non_expert_param_hashes, local_expert_param_hashes = [], []
     for model_chunk_id, model_chunk in enumerate(model):
-        for (param_name, param) in model_chunk.named_parameters():
+        for param_name, param in model_chunk.named_parameters():
             param_hash = torch.frombuffer(
                 array.array(
                     'B', hashlib.sha1(param.data.to("cpu").float().numpy(force=True)).digest()
                 ),
                 dtype=torch.uint8,
             )
-            params.append((model_chunk_id, param_name, param))
-            local_param_hashes.append(param_hash)
-    local_param_hashes = torch.stack(local_param_hashes)
+            if getattr(param, 'allreduce', True):
+                non_expert_params.append((model_chunk_id, param_name, param))
+                local_non_expert_param_hashes.append(param_hash)
+            else:
+                expert_params.append((model_chunk_id, param_name, param))
+                local_expert_param_hashes.append(param_hash)
 
-    # Collect per-parameter hashes across all ranks in DP group.
-    all_param_hashes = [
-        torch.zeros_like(local_param_hashes)
-        for _ in range(parallel_state.get_data_parallel_world_size())
-    ]
-    torch.distributed.all_gather(
-        all_param_hashes, local_param_hashes, group=parallel_state.get_data_parallel_group_gloo()
-    )
+    # Use data-modulo-expert parallel group to all-gather expert param hashes, regular
+    # data-parallel group for non-expert param hashes.
+    all_param_hashes_match = True
+    for params, local_param_hashes, all_gather_group in zip(
+        [non_expert_params, expert_params],
+        [local_non_expert_param_hashes, local_expert_param_hashes],
+        [
+            parallel_state.get_data_parallel_group_gloo(),
+            parallel_state.get_expert_data_parallel_group_gloo(),
+        ],
+    ):
+        # Collect per-parameter hashes across all ranks in group.
+        assert len(params) == len(local_param_hashes)
+        if len(params) == 0:
+            continue
+        local_param_hashes = torch.stack(local_param_hashes)
+        all_param_hashes = [
+            torch.zeros_like(local_param_hashes)
+            for _ in range(torch.distributed.get_world_size(all_gather_group))
+        ]
+        torch.distributed.all_gather(all_param_hashes, local_param_hashes, group=all_gather_group)
 
-    # Make sure local per-parameter hash matches DP rank 0.
-    param_hashes_match = torch.equal(local_param_hashes, all_param_hashes[0])
-    if not param_hashes_match:
-        for i, (model_chunk_id, param_name, param) in enumerate(params):
-            if not torch.equal(local_param_hashes[i], all_param_hashes[0][i]):
-                rank = torch.distributed.get_rank()
-                logger.info(
-                    f"[Rank {rank}] Hash not matching for {param_name} in model chunk {model_chunk_id}"
-                )
-    return param_hashes_match
+        # Make sure local per-parameter hash matches DP rank 0.
+        param_hashes_match = torch.equal(local_param_hashes, all_param_hashes[0])
+        if not param_hashes_match:
+            for i, (model_chunk_id, param_name, param) in enumerate(params):
+                if not torch.equal(local_param_hashes[i], all_param_hashes[0][i]):
+                    rank = torch.distributed.get_rank()
+                    logger.info(
+                        f"[Rank {rank}] Hash not matching for {param_name} in model chunk"
+                        f"{model_chunk_id}"
+                    )
+        if cross_check:
+            # Make sure all ranks have the same hash.
+            all_param_hashes_match &= all(
+                map(lambda x: torch.equal(local_param_hashes, x), all_param_hashes)
+            )
+        else:
+            all_param_hashes_match &= param_hashes_match
+
+    return all_param_hashes_match
 
 
 def make_tp_sharded_tensor_for_checkpoint(
     tensor, key, tp_axis=0, replica_id=None, prepend_offsets=(), **kwargs
 ):
-    """ Helper for instantiating a ShardedTensor where the `tp_axis` dimension is sharded across TP group.
+    """Helper for instantiating a ShardedTensor where the `tp_axis` dimension
+    is sharded across TP group.
 
     Optionally, can provide offsets which prepend new dimensions to the tensor.
     """
-
     prepend_axis_num = len(prepend_offsets)
 
+    new_offsets = []
+    tp_rank = parallel_state.get_tensor_model_parallel_rank()
+    dp_rank = parallel_state.get_data_parallel_rank(with_context_parallel=True)
+    tp_size = parallel_state.get_tensor_model_parallel_world_size()
+    dp_size = parallel_state.get_data_parallel_world_size(with_context_parallel=True)
+    dp_replica_id = parallel_state.get_data_parallel_rank(with_context_parallel=True)
+
+    new_offsets.append((tp_axis + prepend_axis_num, tp_rank, tp_size))
+
+    if HAVE_DTENSOR and isinstance(tensor, DTensor):
+        # TP + FSDP2 sharding
+        dp_replica_id = 0
+        tensor = tensor._local_tensor
+
+        if tp_axis == 0:
+            # both FSDP2 and TP shards axis 0
+            # default MCore uses tp-cp-ep-dp-pp
+            # FSDP2 is compatibile with TP, CP
+            new_offsets[0] = (prepend_axis_num, tp_rank * dp_size + dp_rank, tp_size * dp_size)
+        else:
+            # FSDP2 shards axis 0 and TP shards some other axis
+            new_offsets.append((prepend_axis_num, dp_rank, dp_size))
+
     if replica_id is None:
-        replica_id = (0, 0, parallel_state.get_data_parallel_rank(with_context_parallel=True))
+        replica_id = (0, 0, dp_replica_id)
 
     return ShardedTensor.from_rank_offsets(
         key,
         tensor,
         *prepend_offsets,
-        (
-            tp_axis + prepend_axis_num,
-            parallel_state.get_tensor_model_parallel_rank(),
-            parallel_state.get_tensor_model_parallel_world_size(),
-        ),
+        *new_offsets,
         replica_id=replica_id,
         prepend_axis_num=prepend_axis_num,
         **kwargs,
@@ -281,32 +454,57 @@ def make_tp_sharded_tensor_for_checkpoint(
 
 
 def make_sharded_tensor_for_checkpoint(tensor, key, prepend_offsets=(), replica_id=None, **kwargs):
-    """ Helper for instantiating a non-sharded ShardedTensor (replicated across TP and DP group).
+    """Helper for instantiating a non-sharded ShardedTensor (replicated across TP and DP group).
 
     Optionally, can provide offsets which prepend new dimensions to the tensor.
     """
 
     prepend_axis_num = len(prepend_offsets)
 
+    new_offsets = []
+    dp_rank = parallel_state.get_data_parallel_rank(with_context_parallel=True)
+    dp_size = parallel_state.get_data_parallel_world_size(with_context_parallel=True)
+    dp_replica_id = parallel_state.get_data_parallel_rank(with_context_parallel=True)
+
+    if HAVE_DTENSOR and isinstance(tensor, DTensor):
+        # FSDP2 sharding
+        dp_replica_id = 0
+        tensor = tensor._local_tensor
+        new_offsets.append((prepend_axis_num, dp_rank, dp_size))
+
     if replica_id is None:
-        replica_id = (
-            0,
-            parallel_state.get_tensor_model_parallel_rank(),
-            parallel_state.get_data_parallel_rank(with_context_parallel=True),
-        )
+        replica_id = (0, parallel_state.get_tensor_model_parallel_rank(), dp_replica_id)
 
     return ShardedTensor.from_rank_offsets(
         key,
         tensor,
         *prepend_offsets,
+        *new_offsets,
         replica_id=replica_id,
         prepend_axis_num=prepend_axis_num,
         **kwargs,
     )
 
 
-def prepare_input_tensors_for_wgrad_compute(grad_output, all_gathered_input):
+def to_local_if_dtensor(tensor: Union[torch.Tensor, "DTensor"]) -> torch.Tensor:
+    """Returns the local shard of the given tensor if it is a DTensor."""
+    with torch.no_grad():
+        return tensor.to_local() if HAVE_DTENSOR and isinstance(tensor, DTensor) else tensor
 
+
+def get_data_parallel_group_if_dtensor(
+    tensor: Union[torch.Tensor, "DTensor"], data_parallel_group: "ProcessGroup" = None
+) -> Optional["ProcessGroup"]:
+    """Gets the data parallel group of the given tensor if it is a DTensor."""
+    if HAVE_DTENSOR and isinstance(tensor, DTensor):
+        current_group = tensor.device_mesh.get_group()
+        assert data_parallel_group is None or current_group == data_parallel_group
+        return current_group
+    return None
+
+
+def prepare_input_tensors_for_wgrad_compute(grad_output, all_gathered_input):
+    """Ensure grad_output is stored in a contiguous buffer."""
     # Doing gather + slicing during the NeMo forward pass can make this tensor
     # not be contiguous. PyTorch only checks if the tensor is contiguous, and only
     # clones it if it's not contiguous:
@@ -324,10 +522,18 @@ def prepare_input_tensors_for_wgrad_compute(grad_output, all_gathered_input):
     return grad_output, all_gathered_input
 
 
-def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_output_buffer, weight):
-    """ Helper for performing embedding wgrad GEMM's during the pipeline drain phase, pipelines the AllGather and GEMM's.
+if is_torch_min_version("1.13.0"):
+    dist_all_gather_func = torch.distributed.all_gather_into_tensor
+else:
+    dist_all_gather_func = torch.distributed._all_gather_base
 
-    Should only be used when pipeline model parallelism and gradient accumulation fusion are enabled.
+
+def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_output_buffer, weight):
+    """Helper for performing embedding wgrad GEMM's during the pipeline drain phase, pipelines the
+    AllGather and GEMM's.
+
+    Should only be used when pipeline model parallelism and gradient accumulation
+    fusion are enabled.
     """
 
     assert len(embedding_activation_buffer) == len(
@@ -350,7 +556,7 @@ def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_outp
     all_gathered_input = [None, None]
     if config.sequence_parallel:
         all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu_0")
-        handle = torch.distributed._all_gather_base(
+        handle = dist_all_gather_func(
             all_gather_buffer, input, group=get_tensor_model_parallel_group(), async_op=False
         )
 
@@ -388,7 +594,7 @@ def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_outp
         if config.sequence_parallel:
             name = "mpu_" + str((i + 1) % 2)
             all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, name)
-            handle = torch.distributed._all_gather_base(
+            handle = dist_all_gather_func(
                 all_gather_buffer, input, group=get_tensor_model_parallel_group(), async_op=True
             )
 
@@ -399,14 +605,40 @@ def drain_embedding_wgrad_compute(config, embedding_activation_buffer, grad_outp
 
         grad_output = grad_output_buffer.pop(0)
         wgrad_compute(all_gathered_input[i % 2], grad_output, weight)
+        drain_idx = (i + 1) % 2
         input, all_gathered_input[i % 2], grad_output = None, None, None
 
         if config.sequence_parallel:
             handle.wait()
 
     grad_output = grad_output_buffer.pop(0)
-    wgrad_compute(all_gathered_input[1], grad_output, weight)
-    input, all_gathered_input[1], grad_output = None, None, None
+    wgrad_compute(all_gathered_input[drain_idx], grad_output, weight)
+    input, all_gathered_input[drain_idx], grad_output = None, None, None
+
+
+def local_multi_tensor_applier(op, noop_flag_buffer, tensor_lists, *args):
+    """Multi tensor op applier"""
+    return op(2048 * 32, noop_flag_buffer, tensor_lists, *args)
+
+
+# computes l2 norm for a list of contiguous tensors
+# works as a drop-in replacement for amp_C.multi_tensor_l2norm
+def local_multi_tensor_l2_norm(chunk_size, noop_flag, tensor_lists, per_tensor, *args):
+    """
+    Computes l2 norm for a list of contiguous tensors
+    works as a drop-in replacement for amp_C.multi_tensor_l2norm
+    """
+    l2 = [[(torch.norm(tensor)) for tensor in tensor_list] for tensor_list in tensor_lists]
+    l2_reduced = torch.norm(torch.tensor(l2))
+    l2_cuda = torch.tensor([float(l2_reduced)], dtype=torch.float, device='cuda')
+    return l2_cuda, None
+
+
+# works as a drop-in replacement for amp_C.multi_tensor_scale
+def local_multi_tensor_scale(chunk_size, noop_flag, tensor_lists, scale):
+    """Works as a drop-in replacement for amp_C.multi_tensor_scale."""
+    for src, dst in zip(tensor_lists[0], tensor_lists[1]):
+        dst.copy_(src * scale)
 
 
 class _ValueWithRank:
@@ -431,7 +663,7 @@ class _ValueWithRank:
         self._unit = unit
 
     def __lt__(self, other) -> bool:
-        """ Check if value of self is smaller than other's value
+        """Check if value of self is smaller than other's value
 
         Args:
             other (_ValueWithRank): The other object to compare with
@@ -454,7 +686,7 @@ class _ValueWithRank:
 
     def __call__(self) -> Tuple[float, int, str]:
         """Returns the value, the rank, and unit as a Tuple
-            
+
         Returns:
             Tuple[float, int, str]: value, rank, unit
         """
@@ -508,7 +740,7 @@ class _StragglerData:
     # clock
     min_clock = _ValueWithRank(sys.float_info.max, 0, "MHz")
     max_clock = _ValueWithRank(sys.float_info.min, 0, "MHz")
-    aflops: List[_ValueWithRank] = None
+    aflops: Union[List[_ValueWithRank], None] = None
 
 
 class StragglerDetector:
@@ -537,15 +769,15 @@ class StragglerDetector:
         toggle (bool): whether to start/stop detector collection
         bdata (bool): when true, just collect get_batch
         dev (int): cuda device
-        idx (int): index into the list below
-        idx_q (LifoQueue): queue of index
         evt_q (LifoQueue): cuda event queue
-        start_events (list[torch.cuda.Event]): cuda start event
-        stop_events (list[torch.cuda.Event]): cuda stop event
-        start_time (list[int]): start time (wallclock)
-        stop_time (list[int]): stop time (wallclock)
-        start_batch (list[int]): start time for get_batch
-        stop_batch (list[int]): stop time for get_batch
+        start_gemm_ev (list[torch.cuda.Event]): cuda start event
+        stop_gemm_ev (list[torch.cuda.Event]): cuda stop event
+        start_data_ev (list[torch.cuda.Event]): cuda start event
+        stop_data_ev (list[torch.cuda.Event]): cuda stop event
+        start_gemm_tm (list[int]): start time (wallclock)
+        stop_gemm_tm (list[int]): stop time (wallclock)
+        start_data_tm (list[int]): start time for get_batch
+        stop_data_tm (list[int]): stop time for get_batch
         sock (socket): the controller socket
         ctrlr (Thread): the controller thread
     """
@@ -576,28 +808,28 @@ class StragglerDetector:
         The enabled state is indicated using self._off member variable
         and the proerty enabled.
         """
-        self._off = True
+        self._off: bool = True
         self.start = self.null_method
         self.stop = self.null_method
-        self.world = 0
-        self.rank = 0
-        self.mmcnt = 1
-        self.port = 0
-        self.amp = 3.0
-        self.toggle = False
-        self.bdata = False
-        self.dev = None
-        self.idx = 0
-        self.idx_q = None
-        self.evt_q = None
-        self.start_events = None
-        self.stop_events = None
-        self.start_time = None
-        self.stop_time = None
-        self.start_batch = None
-        self.stop_batch = None
-        self.sock = None
-        self.ctrlr = None
+        self.world: int = 0
+        self.rank: int = 0
+        self.mmcnt: int = 1
+        self.port: int = 0
+        self.amp: float = 3.0
+        self.toggle: bool = False
+        self.bdata: bool = False
+        self.dev: Union[torch.device, int, None] = None
+        self.evt_q: Union[queue.LifoQueue, None] = None
+        self.start_gemm_ev: List[torch.cuda.Event] = []
+        self.stop_gemm_ev: List[torch.cuda.Event] = []
+        self.start_data_ev: List[torch.cuda.Event] = []
+        self.stop_data_ev: List[torch.cuda.Event] = []
+        self.start_gemm_tm: List[int] = []
+        self.stop_gemm_tm: List[int] = []
+        self.start_data_tm: List[int] = []
+        self.stop_data_tm: List[int] = []
+        self.sock: Union[socket.socket, None] = None
+        self.ctrlr: Union[threading.Thread, None] = None
 
     def configure(
         self,
@@ -628,7 +860,7 @@ class StragglerDetector:
             amp (float, optional): Set to 3.0 if we only use timers in fwd pass.
                                    Defaults to 3.0.
             port (int, optional): Control port, useful only for rank-0. Defaults to 65535.
-            prefill (int, optional): Howmany Events to pre-populate. Defaults to 1024.
+            prefill (int, optional): How many Events to pre-populate. Defaults to 1024.
             enabled (bool, optional): Whether or not collection is enabled on startup.
                                       Defaults to False.
         """
@@ -650,15 +882,15 @@ class StragglerDetector:
             self.port = port
             self.toggle = False
             self.bdata = False
-            self.idx = 0
-            self.idx_q = queue.LifoQueue()
             self.evt_q = queue.LifoQueue()
-            self.start_events = []
-            self.stop_events = []
-            self.start_time = []
-            self.stop_time = []
-            self.start_batch = []
-            self.stop_batch = []
+            self.start_gemm_ev = []
+            self.stop_gemm_ev = []
+            self.start_data_ev = []
+            self.stop_data_ev = []
+            self.start_gemm_tm = []
+            self.stop_gemm_tm = []
+            self.start_data_tm = []
+            self.stop_data_tm = []
             backend = torch.distributed.get_backend()
             if backend == "nccl":
                 self.dev = torch.cuda.current_device()
@@ -681,18 +913,21 @@ class StragglerDetector:
         """
         if self._off:
             return
-        self.idx = 0
-        self.idx_q = queue.LifoQueue()
         # Pool them
-        _ = [self.evt_q.put(ev) for ev in self.start_events]
-        _ = [self.evt_q.put(ev) for ev in self.stop_events]
-        self.start_events = []
-        self.stop_events = []
+        if self.evt_q is not None:
+            _ = [self.evt_q.put(ev) for ev in self.start_gemm_ev]
+            _ = [self.evt_q.put(ev) for ev in self.stop_gemm_ev]
+            _ = [self.evt_q.put(ev) for ev in self.start_data_ev]
+            _ = [self.evt_q.put(ev) for ev in self.stop_data_ev]
+        self.start_gemm_ev = []
+        self.stop_gemm_ev = []
+        self.start_data_ev = []
+        self.stop_data_ev = []
         # Use regular timers
-        self.start_time = []
-        self.stop_time = []
-        self.start_batch = []
-        self.stop_batch = []
+        self.start_gemm_tm = []
+        self.stop_gemm_tm = []
+        self.start_data_tm = []
+        self.stop_data_tm = []
         self.bdata = False
 
     def start_method(self) -> None:
@@ -704,26 +939,30 @@ class StragglerDetector:
         CPU - generally useful for timing get_batch()
         """
         # Not reentrant
-        # First check if this start is for data
-        if self.bdata:
-            self.start_batch.append(time.perf_counter_ns())
-            self.stop_batch.append(0)  # this indicate we need to add timer
-            self.bdata = False
-            return
-        if self.evt_q.qsize() > 1:
+        if self.evt_q is not None and self.evt_q.qsize() > 1:
             sev = self.evt_q.get()  # no try-catch
             eev = self.evt_q.get()  # no try-catch
         else:
             sev = torch.cuda.Event(enable_timing=True)
             eev = torch.cuda.Event(enable_timing=True)
-        self.start_events.append(sev)
-        self.stop_events.append(eev)
-        self.start_time.append(0)
-        self.stop_time.append(0)
-        self.idx_q.put(self.idx)
-        self.start_time[self.idx] = time.perf_counter_ns()
-        self.start_events[self.idx].record()
-        self.idx += 1
+        # First check if this start is for data
+        if self.bdata:
+            self.start_data_ev.append(sev)
+            self.stop_data_ev.append(eev)
+            self.start_data_tm.append(0)
+            self.stop_data_tm.append(0)
+            idx = len(self.stop_data_tm) - 1
+            self.start_data_tm[idx] = time.perf_counter_ns()
+            self.start_data_ev[idx].record()
+            self.bdata = False
+            return
+        self.start_gemm_ev.append(sev)
+        self.stop_gemm_ev.append(eev)
+        self.start_gemm_tm.append(0)
+        self.stop_gemm_tm.append(0)
+        idx = len(self.stop_gemm_tm) - 1
+        self.start_gemm_tm[idx] = time.perf_counter_ns()
+        self.start_gemm_ev[idx].record()
 
     def stop_method(self) -> None:
         """This method adds the stop timers.
@@ -734,13 +973,15 @@ class StragglerDetector:
         """
         # Not reentrant
         # First check if this stop is for data
-        dle = len(self.stop_batch) - 1
-        if dle >= 0 and self.stop_batch[dle] == 0:
-            self.stop_batch[dle] = time.perf_counter_ns()
+        idx = len(self.stop_data_tm) - 1
+        if idx >= 0 and self.stop_data_tm[idx] == 0:
+            self.stop_data_tm[idx] = time.perf_counter_ns()
+            self.stop_data_ev[idx].record()
             return
-        idx = self.idx_q.get()
-        self.stop_time[idx] = time.perf_counter_ns()
-        self.stop_events[idx].record()
+        idx = len(self.stop_gemm_tm) - 1
+        if idx >= 0 and self.stop_gemm_tm[idx] == 0:
+            self.stop_gemm_tm[idx] = time.perf_counter_ns()
+            self.stop_gemm_ev[idx].record()
 
     def elapsed(self) -> Tuple[float, float, int, int, int, int]:
         """This method is called from report(), or can be called directly
@@ -760,10 +1001,10 @@ class StragglerDetector:
         if self._off:
             # match with return below
             return 0, 0, 0, 0, 0, 0
-        ls_ev = len(self.start_events)
-        le_ev = len(self.stop_events)
-        ls_bs = len(self.start_batch)
-        ls_be = len(self.stop_batch)
+        ls_ev = len(self.start_gemm_ev)
+        le_ev = len(self.stop_gemm_ev)
+        ls_bs = len(self.start_data_ev)
+        ls_be = len(self.stop_data_ev)
         delta = 0.0
         batch_delta = 0.0
         temp = 0
@@ -781,15 +1022,18 @@ class StragglerDetector:
             torch.cuda.synchronize()
             # Process Events
             for i in range(ls_ev):
-                e_ev = self.start_events[i].elapsed_time(self.stop_events[i])
-                e_tm = (self.stop_time[i] - self.start_time[i]) / 1e6  # ns to ms
+                e_ev = self.start_gemm_ev[i].elapsed_time(self.stop_gemm_ev[i])
+                e_tm = (self.stop_gemm_tm[i] - self.start_gemm_tm[i]) / 1e6  # ns to ms
                 # Pick the larger of Event and perf_counter time?
                 delta += max(e_ev, e_tm)
             # Process get_batch
             for i in range(ls_bs):
-                batch_delta = (self.stop_batch[i] - self.start_batch[i]) / 1e3  # us
+                b_ev = self.start_data_ev[i].elapsed_time(self.stop_data_ev[i])
+                b_tm = (self.stop_data_tm[i] - self.start_data_tm[i]) / 1e6  # ns to ms
+                # data fetching has prefetch, hence take the max, instead of avg
+                batch_delta = max(batch_delta, max(b_ev, b_tm))
         self.reset()  # Prepare for next round
-        # time in ms, batch_delta in us, check return above
+        # time in ms, batch_delta in ms, check return above
         return delta, batch_delta, temp, power, util, clock
 
     def report(self, total_flops: float = 0.0, log_interval: int = 0) -> bool:
@@ -810,19 +1054,19 @@ class StragglerDetector:
         """
         ret = False
         if not self._off and total_flops > 0.0 and log_interval > 0:
-            elapsed, btime_us, temp, power, util, clock = self.elapsed()  # get raw time
+            elapsed, btime, temp, power, util, clock = self.elapsed()  # get raw time
+            # btime (get_batch time is max in the iteration)
             ptime = elapsed / (log_interval * 1.0)  # avg per iteration elapsed time, ms
-            btime = btime_us / (log_interval * 1.0)  # avg per iteration get_batch time, us
             api_flops = total_flops / (log_interval * 1.0)  # avg per iteration flops, ms
             apir_flops = api_flops / (
-                ptime * 10 ** 9 * self.world
+                ptime * 10**9 * self.world
             )  # this is avg per iteration this rank's thruput, TFLOP/s (note 10**9),
             et_flops = apir_flops / self.amp  # Estimated TFLOPs, not tracing backward
 
             o_dt = self._min_max(
-                ptime, btime, float(temp), float(power), float(util), float(clock), et_flops,
+                ptime, btime, float(temp), float(power), float(util), float(clock), et_flops
             )
-            if self.rank == 0:
+            if self.rank == 0 and o_dt is not None and o_dt.aflops is not None:
                 now = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]"
                 min_flops, min_frank, _ = o_dt.aflops[0]()
                 max_flops, max_frank, _ = o_dt.aflops[-1]()
@@ -867,24 +1111,27 @@ class StragglerDetector:
         indirectly from report() is the only way to activate the change that is made
         via rank-0
         """
-        # If no change just commnunicate the current
+        # If no change just communicate the current
         off = self._off
         if self.rank == 0 and self.toggle:
             off = not self._off
             self.toggle = False
-        state = torch.tensor(off, dtype=torch.bool, device=self.dev)
-        torch.distributed.broadcast(state, 0)  # Blocking
-        self._off = state.item()
-        if not self._off:
-            self.start = self.start_method
-            self.stop = self.stop_method
-            state = "ON"
-        else:
-            self.start = self.null_method
-            self.stop = self.null_method
-            state = "OFF"
-        if self.rank == 0 and off is not self._off:
-            logger.info(f"Toggling StragglerDetector State {state}")
+        st = torch.tensor(off, dtype=torch.bool, device=self.dev)
+        torch.distributed.broadcast(st, 0)  # Blocking
+        # save old switch
+        off = self._off
+        self._off = bool(st.item())
+        if off != self._off:
+            if not self._off:
+                self.start = self.start_method
+                self.stop = self.stop_method
+                state = "ON"
+            else:
+                self.start = self.null_method
+                self.stop = self.null_method
+                state = "OFF"
+            if self.rank == 0:
+                logger.info(f"Toggling StragglerDetector State {state}")
 
     def _handler(self) -> None:
         """Thread function for the controller.
@@ -894,14 +1141,14 @@ class StragglerDetector:
         collection state. The actual toggling happens at the end of
         calling report() when _check_toggle() is called.
         """
-        resp = f"HTTP/1.0 200 OK\r\nConnection: Close\r\nContent-length: "
+        resp = r"HTTP/1.0 200 OK\r\nConnection: Close\r\nContent-length: "
 
         if self.rank == 0:
             state = "OFF" if self._off else "ON"
             logger.info(
-                f"Controller ready to recv " f"commands on port {self.port}. Current state {state}"
+                f"Controller ready to recv commands on port {self.port}. Current state {state}"
             )
-            while True:
+            while True and self.sock is not None:
                 try:
                     conn, _ = self.sock.accept()
                     _ = conn.recv(1024)
@@ -969,7 +1216,8 @@ class StragglerDetector:
         # initialize output data object
         o_dt = _StragglerData()
 
-        prof_data = {}
+        prof_data: Dict[str, Union[int, float]] = {}
+        data_list: List[Dict[str, Union[int, float]]] = []
         prof_data["rank"] = self.rank
         prof_data["time"] = ptime
         prof_data["btime"] = btime
@@ -981,8 +1229,6 @@ class StragglerDetector:
 
         if self.rank == 0:
             data_list = [prof_data] * self.world
-        else:
-            data_list = None
 
         # this is blocking by default
         torch.distributed.gather_object(prof_data, object_gather_list=data_list, dst=0)
@@ -1010,46 +1256,47 @@ class StragglerDetector:
             min_rank = min_ctime["rank"]
             max_val = max_ctime["time"]
             max_rank = max_ctime["rank"]
-            o_dt.min_elapsed = _ValueWithRank(min_val, min_rank, "ms")
-            o_dt.max_elapsed = _ValueWithRank(max_val, max_rank, "ms")
+            o_dt.min_elapsed = _ValueWithRank(min_val, int(min_rank), "ms")
+            o_dt.max_elapsed = _ValueWithRank(max_val, int(max_rank), "ms")
 
             min_val = min_cbatch["btime"]
             min_rank = min_cbatch["rank"]
             max_val = max_cbatch["btime"]
             max_rank = max_cbatch["rank"]
-            o_dt.min_btime = _ValueWithRank(min_val, min_rank, "us")
-            o_dt.max_btime = _ValueWithRank(max_val, max_rank, "us")
+            o_dt.min_btime = _ValueWithRank(min_val, int(min_rank), "ms")
+            o_dt.max_btime = _ValueWithRank(max_val, int(max_rank), "ms")
 
             min_val = min_ctemp["temp"]
             min_rank = min_ctemp["rank"]
             max_val = max_ctemp["temp"]
             max_rank = max_ctemp["rank"]
-            o_dt.min_temp = _ValueWithRank(min_val, min_rank, "C")
-            o_dt.max_temp = _ValueWithRank(max_val, max_rank, "C")
+            o_dt.min_temp = _ValueWithRank(min_val, int(min_rank), "C")
+            o_dt.max_temp = _ValueWithRank(max_val, int(max_rank), "C")
 
             min_val = min_cpower["power"]
             min_rank = min_cpower["rank"]
             max_val = max_cpower["power"]
             max_rank = max_cpower["rank"]
-            o_dt.min_power = _ValueWithRank(min_val, min_rank, "W")
-            o_dt.max_power = _ValueWithRank(max_val, max_rank, "W")
+            o_dt.min_power = _ValueWithRank(min_val, int(min_rank), "W")
+            o_dt.max_power = _ValueWithRank(max_val, int(max_rank), "W")
 
             min_val = min_cutil["util"]
             min_rank = min_cutil["rank"]
             max_val = max_cutil["util"]
             max_rank = max_cutil["rank"]
-            o_dt.min_util = _ValueWithRank(min_val, min_rank, "%")
-            o_dt.max_util = _ValueWithRank(max_val, max_rank, "%")
+            o_dt.min_util = _ValueWithRank(min_val, int(min_rank), "%")
+            o_dt.max_util = _ValueWithRank(max_val, int(max_rank), "%")
 
             min_val = min_cclock["clock"]
             min_rank = min_cclock["rank"]
             max_val = max_cclock["clock"]
             max_rank = max_cclock["rank"]
-            o_dt.min_clock = _ValueWithRank(min_val, min_rank, "MHz")
-            o_dt.max_clock = _ValueWithRank(max_val, max_rank, "MHz")
+            o_dt.min_clock = _ValueWithRank(min_val, int(min_rank), "MHz")
+            o_dt.max_clock = _ValueWithRank(max_val, int(max_rank), "MHz")
 
             o_dt.aflops = [
-                _ValueWithRank(d.get("flops"), d.get("rank")) for _, d in enumerate(data_list)
+                _ValueWithRank(d.get("flops", 0.0), int(d.get("rank", -1)))
+                for _, d in enumerate(data_list)
             ]
             o_dt.aflops.sort(key=lambda val_with_rank: val_with_rank()[0])
         # wait for everyone here
@@ -1070,7 +1317,7 @@ class StragglerDetector:
 
     @property
     def configured(self) -> bool:
-        """Can be called to check if the the instance is already configured
+        """Can be called to check if the instance is already configured
 
         Returns:
             bool: returns True if configure was called and was a success, else False
@@ -1139,16 +1386,30 @@ class StragglerDetector:
             bool: True if the exception was handled
         """
         # Should not suppress errors even if turned off
-        ret = False
         if ex_type is not None:
-            err = traceback.format_exception(ex_tb)
+            err = traceback.format_exception(ex_type, ex_val, ex_tb)
             logger.warning(f"{str(ex_val)}\n{err}")
-            ret = True
         self.stop()
-        return ret
+        return False
 
 
 # Singleton, global visibility
 __straggler__ = StragglerDetector()
 """StragglerDetector: private module variable, not be directly accessed
 """
+
+
+# Check if Transformer Engine has Float8Tensor class
+HAVE_TE_FLOAT8TENSOR = False
+try:
+    from transformer_engine.pytorch.float8_tensor import Float8Tensor
+
+    HAVE_TE_FLOAT8TENSOR = True
+except (ImportError, ModuleNotFoundError):
+    # Float8Tensor not found
+    pass
+
+
+def is_float8tensor(tensor: torch.Tensor) -> bool:
+    """Check if a tensor is a Transformer Engine Float8Tensor"""
+    return HAVE_TE_FLOAT8TENSOR and isinstance(tensor, Float8Tensor)
