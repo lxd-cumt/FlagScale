@@ -37,6 +37,7 @@ def load_args_hf2mg(args):
     args.add_position_embedding = False
     args.group_query_attention = True
     args.normalization = "RMSNorm"
+    args.tokenizer_type = "Qwen2TokenizerFS"
     args.use_rotary_position_embeddings = True
     args.add_bias_linear = False
     args.make_vocab_size_divisible_by = 64

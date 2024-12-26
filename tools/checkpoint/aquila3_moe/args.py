@@ -40,6 +40,7 @@ def load_args_hf2mg(args):
     args.add_position_embedding = False
     args.group_query_attention = True
     args.normalization = "RMSNorm"
+    args.tokenizer_type = "Qwen2TokenizerFS"
     args.use_rotary_position_embeddings = True
     args.moe_router_load_balancing_type = "aux_loss"
     args.add_bias_linear = False

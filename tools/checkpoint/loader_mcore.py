@@ -82,7 +82,7 @@ def _load_checkpoint(queue, args):
     prepare megatron arguments (margs)
     """
 
-    # We want all arguments to come from us
+    # We want all arguments to come from us.
     sys.argv = [
         'script.py',
         '--no-masked-softmax-fusion',
@@ -102,6 +102,7 @@ def _load_checkpoint(queue, args):
         '--load', args.load_dir,
         '--position-embedding-type', args.position_embedding_type,
         '--exit-on-missing-checkpoint',
+        '--use-mp-args-from-checkpoint-args',
     ]
 
     margs = parse_args(add_flagscale_args)

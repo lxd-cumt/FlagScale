@@ -12,7 +12,7 @@ def add_arguments(parser):
     group.add_argument('--true-vocab-size', type=int, default=None,
                        help='original size of vocab, if specified will trim padding from embedding table.')
     group.add_argument('--megatron-path', type=str, default=None,
-                       help='Base directory of deepspeed repository')
+                       help='Base directory of megatron repository')
     group.add_argument('--position-embedding-type',
                     type=str,
                     default='learned_absolute',
@@ -98,6 +98,7 @@ def _load_checkpoint(queue, args):
         '--load', args.load_dir,
         '--position-embedding-type', args.position_embedding_type,
         '--exit-on-missing-checkpoint',
+        '--use-mp-args-from-checkpoint-args',
     ]
 
     margs = parse_args(add_flagscale_args)
@@ -126,7 +127,9 @@ def _load_checkpoint(queue, args):
     check_for_arg('num_attention_heads')
     check_for_arg('max_position_embeddings')
     check_for_arg('position_embedding_type')
+    check_for_arg('tokenizer_type')
     check_for_arg('iteration')
+    check_for_arg('bert_binary_head')
     check_for_arg('params_dtype')
     check_for_arg('swiglu', False)
     check_for_arg('disable_bias_linear', not getattr(margs, "add_bias_linear", False))
@@ -144,6 +147,7 @@ def _load_checkpoint(queue, args):
     md.seq_length = margs.seq_length
     md.num_attention_heads = margs.num_attention_heads
     md.max_position_embeddings = margs.max_position_embeddings
+    md.tokenizer_type = margs.tokenizer_type
     md.iteration = margs.iteration
     md.params_dtype = margs.params_dtype
     md.output_layer = margs.untie_embeddings_and_output_weights
@@ -156,7 +160,6 @@ def _load_checkpoint(queue, args):
     md.previous_tensor_parallel_size = margs.tensor_model_parallel_size
     md.previous_pipeline_parallel_size = margs.pipeline_model_parallel_size
     md.previous_expert_parallel_size = margs.expert_model_parallel_size
-    md.previous_virtual_pipeline_parallel_size = margs.virtual_pipeline_model_parallel_size
     md.true_vocab_size = args.true_vocab_size
     md.true_language_vocab_size = args.true_language_vocab_size
     md.make_vocab_size_divisible_by = margs.make_vocab_size_divisible_by

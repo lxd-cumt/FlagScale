@@ -215,6 +215,7 @@ def save_checkpoint(queue, args):
                         'train_iters', 'lr_decay_iters', 'lr_warmup_iters', 'lr_warmup_fraction',
                         'start_weight_decay', 'end_weight_decay',
                         'ckpt_format',
+                        'inference_batch_times_seqlen_threshold',
         ]
 
         for arg, value in vars(md.checkpoint_args).items():

@@ -174,8 +174,9 @@ def validate_args(args, defaults={}):
     update_use_dist_ckpt(args)
 
     if not args.enable_hetero:
-        if args.encoder_pipeline_model_parallel_size == 0 and args.num_experts == 0:
-            assert args.encoder_tensor_model_parallel_size == args.tensor_model_parallel_size,  "If non-MOE encoder shares first decoder pipeline rank it must have the same TP as the decoder."
+        # NOTE(zhaoyinglia): raise assert error when ckpt convert
+        # if args.encoder_pipeline_model_parallel_size == 0 and args.num_experts == 0:
+        #     assert args.encoder_tensor_model_parallel_size == args.tensor_model_parallel_size,  "If non-MOE encoder shares first decoder pipeline rank it must have the same TP as the decoder."
 
         if args.encoder_tensor_model_parallel_size > 0:
             assert args.encoder_pipeline_model_parallel_size > 0, "encoder_pipeline_model_parallel_size must be defined."
