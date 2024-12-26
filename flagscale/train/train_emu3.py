@@ -5,17 +5,17 @@ import os
 import math
 import torch
 from functools import partial
+from contextlib import nullcontext
+import inspect
 
-from typing import Union
+from typing import List, Optional, Tuple, Union
 from megatron.training import get_args
-
 from megatron.training import print_rank_0
 from megatron.training import get_timers
 from megatron.training import get_tokenizer
 from megatron.core import mpu, tensor_parallel
 from megatron.core.enums import ModelType
 from megatron.core.datasets.blended_megatron_dataset_builder import BlendedMegatronDatasetBuilder
-from megatron.core.datasets.utils import get_blend_from_list
 from megatron.core.datasets.gpt_dataset import GPTDatasetConfig
 import megatron.legacy.model
 from megatron.core.models.gpt import GPTModel
@@ -23,9 +23,11 @@ from megatron.core.utils import StragglerDetector
 from megatron.core.transformer.spec_utils import import_module
 from megatron.training.utils import (
     get_batch_on_this_cp_rank,
+    get_blend_and_blend_per_split,
 )
 from megatron.training.arguments import core_transformer_config_from_args
 from megatron.training.yaml_arguments import core_transformer_config_from_yaml
+
 from flagscale.models.emu3.emu_layer_specs import get_emu_with_transformer_engine_spec
 from flagscale.datasets.emu_dataset import EmuDataset
 from flagscale.models.emu3.emu_model import EmuModel
@@ -74,6 +76,14 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
     use_te = args.transformer_impl == "transformer_engine"
     assert use_te
 
+    if args.record_memory_history:
+        torch.cuda.memory._record_memory_history(True,
+            # keep 100,000 alloc/free events from before the snapshot
+            trace_alloc_max_entries=100000,
+
+            # record stack information for the trace events
+            trace_alloc_record_context=True)
+
     print_rank_0('building GPT model ...')
     # Experimental loading arguments from yaml
     if args.yaml_cfg is not None:
@@ -84,31 +94,45 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
     config.init_method = small_init_init_method(config.hidden_size)
     config.output_layer_init_method = wang_init_method(config.num_layers, config.hidden_size)
 
+    assert args.use_legacy_models is False
+
     if args.spec is not None:
         transformer_layer_spec = import_module(args.spec)
     else:
-        transformer_layer_spec = get_emu_with_transformer_engine_spec(
-            num_experts=args.num_experts, 
-            use_multimodal_router_attn=args.use_multimodal_router_attn,
-            use_multimodal_router_mlp=args.use_multimodal_router_mlp,
-            moe_grouped_gemm=args.moe_grouped_gemm,
-        )
+        transformer_layer_spec = get_emu_with_transformer_engine_spec(args.num_experts, args.moe_grouped_gemm, args.qk_layernorm, args.multi_latent_attention, args.fp8)
 
-    model = EmuModel(
-        config=config,
-        transformer_layer_spec=transformer_layer_spec,
-        language_vocab_size=args.language_padded_vocab_size,
-        vision_vocab_size=args.vision_padded_vocab_size,
-        max_sequence_length=args.max_position_embeddings,
-        pre_process=pre_process,
-        post_process=post_process,
-        fp16_lm_cross_entropy=args.fp16_lm_cross_entropy,
-        parallel_output=True,
-        share_embeddings_and_output_weights=not args.untie_embeddings_and_output_weights,
-        position_embedding_type=args.position_embedding_type,
-        rotary_percent=args.rotary_percent,
-        rotary_base=args.rotary_base,
-    )
+    build_model_context = nullcontext
+    build_model_context_args = {}
+    if args.fp8_param_gather:
+        try:
+            from transformer_engine.pytorch import fp8_model_init
+
+            build_model_context = fp8_model_init
+            build_model_context_args["enabled"] = True
+
+            # Check if fp8_model_init supports preserve_high_precision_init_val
+            if "preserve_high_precision_init_val" in inspect.signature(fp8_model_init).parameters:
+                build_model_context_args["preserve_high_precision_init_val"] = True
+        except:
+            raise RuntimeError("--fp8-param-gather requires `fp8_model_init` from TransformerEngine, but not found.")
+
+    with build_model_context(**build_model_context_args):
+        model = EmuModel(
+            config=config,
+            transformer_layer_spec=transformer_layer_spec,
+            language_vocab_size=args.language_padded_vocab_size,
+            vision_vocab_size=args.vision_padded_vocab_size,
+            max_sequence_length=args.max_position_embeddings,
+            pre_process=pre_process,
+            post_process=post_process,
+            fp16_lm_cross_entropy=args.fp16_lm_cross_entropy,
+            parallel_output=True,
+            share_embeddings_and_output_weights=not args.untie_embeddings_and_output_weights,
+            position_embedding_type=args.position_embedding_type,
+            rotary_percent=args.rotary_percent,
+            rotary_base=args.rotary_base,
+            rope_scaling=args.use_rope_scaling
+        )
 
     if args.multimodal_freeze_language_parameters:
         model.freeze_language_model()
@@ -356,15 +380,17 @@ def is_dataset_built_on_rank():
 def core_gpt_dataset_config_from_args(args):
     tokenizer = get_tokenizer()
 
+    # Sometimes --data-path is too long, instead we parse it from a file.
+    blend: Optional[Tuple[List[str], Optional[List[float]]]]
+    blend_per_split: Optional[List[Optional[Tuple[List[str], Optional[List[float]]]]]]
+    blend, blend_per_split = get_blend_and_blend_per_split(args)
+
     return GPTDatasetConfig(
         random_seed=args.seed,
         sequence_length=args.seq_length,
-        blend=get_blend_from_list(args.data_path),
-        blend_per_split=[
-            get_blend_from_list(args.train_data_path),
-            get_blend_from_list(args.valid_data_path),
-            get_blend_from_list(args.test_data_path)
-        ],
+        blend=blend,
+        blend_per_split=blend_per_split,
+        renormalize_blend_weights=args.renormalize_blend_weights,
         split=args.split,
         num_dataset_builder_threads=args.num_dataset_builder_threads,
         path_to_cache=args.data_cache_path,
@@ -374,7 +400,7 @@ def core_gpt_dataset_config_from_args(args):
         reset_attention_mask=args.reset_attention_mask,
         eod_mask_loss=args.eod_mask_loss,
         create_attention_mask=args.create_attention_mask_in_dataloader,
-        s3_cache_path = args.s3_cache_path,
+        s3_cache_path=args.s3_cache_path,
     )
 
 
@@ -410,10 +436,11 @@ if __name__ == "__main__":
     # Temporary for transition to core datasets
     train_valid_test_datasets_provider.is_distributed = True
 
-    pretrain(train_valid_test_datasets_provider,
-             model_provider,
-             ModelType.encoder_or_decoder,
-             forward_step,
-             extra_args_provider=add_flagscale_args,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-             get_batch_fn=get_batch)
+    pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+        extra_args_provider=add_flagscale_args,
+    )

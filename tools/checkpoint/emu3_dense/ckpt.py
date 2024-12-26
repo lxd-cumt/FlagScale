@@ -67,7 +67,7 @@ def get_embedding_ckpt(message, models, args):
 
 
 def get_attn_ckpt(message, models, layer_id, args):
-    tp_size, _, _, _ = _get_parallel_size(args)
+    tp_size, _, ep_size, _ = _get_parallel_size(args)
 
     # parallel tensor
     qkv_weight = []
@@ -80,8 +80,14 @@ def get_attn_ckpt(message, models, layer_id, args):
     post_norm_weight = None
     post_norm_bias = None
 
-    assert len(models) == tp_size
-    for model in models:
+    assert len(models) == tp_size * ep_size
+    complete_tp_ranks = []
+    for tp_ep_rank, model in enumerate(models):
+        tp_rank = tp_ep_rank % tp_size
+        if tp_rank in complete_tp_ranks:
+            continue
+        complete_tp_ranks.append(tp_rank)
+
         tf_layer = model.decoder.layers[layer_id]
         # weight
         qkv_weight.append(tf_layer.self_attention.linear_qkv.weight.data)

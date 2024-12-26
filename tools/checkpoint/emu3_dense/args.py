@@ -9,10 +9,9 @@ def load_args_hf2mg(args):
 
 def save_args_mg2hf(args):
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
-    from examples.emu.emu3_dense.configuration_llama import LlamaConfig
+    from examples.emu.emu3_dense.configuration_emu3 import Emu3Config
 
-    LlamaConfig.model_type = "emu3"
-    config = LlamaConfig(
+    config = Emu3Config(
         vocab_size=args.vocab_size,
         hidden_size=args.hidden_size,
         intermediate_size=args.ffn_hidden_size,
@@ -24,19 +23,16 @@ def save_args_mg2hf(args):
         initializer_range=args.init_method_std,
         rms_norm_eps=args.norm_epsilon,
         use_cache=True,
-        pad_token_id=151643,
-        bos_token_id=151849,
-        eos_token_id=151850,
         pretraining_tp=1,
         tie_word_embeddings=(not args.untie_embeddings_and_output_weights),
         rope_theta=args.rotary_base,
         attention_dropout=args.attention_dropout,
         torch_dtype=args.params_dtype,
     )
-    config.architectures = ["LlamaForCausalLM"]
+    config.architectures = ["Emu3ForCausalLM"]
     auto_map = dict()
-    auto_map['AutoConfig'] = 'configuration_llama.LlamaConfig'
-    auto_map['AutoModelForCausalLM'] = 'modeling_llama.LlamaForCausalLM'
+    auto_map['AutoConfig'] = 'configuration_emu3.Emu3Config'
+    auto_map['AutoModelForCausalLM'] = 'modeling_emu3.Emu3ForCausalLM'
     config.auto_map = auto_map
     config.save_pretrained(args.save)
 

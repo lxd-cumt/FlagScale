@@ -145,9 +145,11 @@ def save_checkpoint(queue, args):
         '--num-layers', str(md.num_layers),
         '--hidden-size', str(md.hidden_size),
         '--seq-length', str(md.seq_length),
+        '--num-experts', str(getattr(md, "num_experts", 0)),
         '--num-attention-heads', str(md.num_attention_heads),
         '--max-position-embeddings', str(md.max_position_embeddings),
         '--position-embedding-type', str(md.position_embedding_type),
+        '--tokenizer-type', str(md.tokenizer_type),
         '--tensor-model-parallel-size', str(args.target_tensor_parallel_size),
         '--pipeline-model-parallel-size', str(args.target_pipeline_parallel_size),
         '--expert-model-parallel-size', str(args.target_expert_parallel_size),
@@ -166,8 +168,8 @@ def save_checkpoint(queue, args):
         '--no-save-rng',
         '--no-initialization',
         '--save-interval', '1',
+        '--save', args.save_dir,
         '--ckpt-format', 'torch', # only 'torch' supported for conversion
-        '--save', args.save_dir
     ]
     if args.target_num_experts is not None:
         sys.argv.extend(['--num-experts', str(args.target_num_experts)])
@@ -225,12 +227,32 @@ def save_checkpoint(queue, args):
                 print(f"Overwriting default {arg} value {getattr(margs, arg)} with value from checkpoint {value}.")
                 setattr(margs, arg, value)
 
+    # Explicitly copy sequence_parallel, apply_query_key_layer_scaling.
+    margs.sequence_parallel = md.checkpoint_args.sequence_parallel
+    margs.apply_query_key_layer_scaling = md.checkpoint_args.apply_query_key_layer_scaling
+
+    # Sequence parallel is required if use both tensor-parallel and Moe.
+    if margs.num_experts is not None and args.target_tensor_parallel_size is not None:
+        if margs.num_experts > 1 and args.target_tensor_parallel_size > 1:
+            margs.sequence_parallel = True
+
     print("*"*20 + "validate saver arguments" + "*"*20)
     margs = validate_args(margs)
-    margs.use_dist_ckpt = False
+
+    # Use M-core models & unset loaded paths.
+    margs.use_legacy_models = False
+    margs.blendable_index_path = None
+    margs.data_path = []
+    margs.load = None
+    margs.save = args.save_dir
+    margs.tensorboard_dir = None
+    margs.tokenizer_model = None
+    margs.transformer_impl = "transformer_engine"
+
     if md.true_vocab_size is not None:
         margs.vocab_size = md.true_vocab_size
         if getattr(md, "true_language_vocab_size", None):
+            margs.language_vocab_size = md.true_language_vocab_size
             margs.language_padded_vocab_size = _vocab_size_with_padding(
                 md.true_language_vocab_size, margs
             )

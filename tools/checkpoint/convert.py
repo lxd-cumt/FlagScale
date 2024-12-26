@@ -49,8 +49,6 @@ def main():
     extend_cases = [
         ['mistral', 'mixtral'], 
         ['aquila3_dense', 'aquila3_moe'],
-        ['aquila3_dense', 'emu3_dense'],
-        ['aquila3_moe', 'emu3_moe'],
         ['emu3_dense', 'emu3_moe']
     ]
 

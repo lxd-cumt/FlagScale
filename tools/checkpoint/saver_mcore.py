@@ -29,10 +29,6 @@ def add_arguments(parser):
                             'Only used when converting a Transformers checkpoint to a Megatron checkpoint.')
     group.add_argument("--build-model-with-initialization", action="store_true")
 
-    # for emu model
-    group.add_argument('--target-num-experts-split', type=int, default=None)
-    group.add_argument("--use-multimodal-router", action="store_true")
-
 
 def save_checkpoint(queue, args):
 
@@ -61,7 +57,7 @@ def save_checkpoint(queue, args):
     try:
         from megatron.training.arguments import parse_args, validate_args
         from megatron.training.checkpointing import save_checkpoint, get_checkpoint_name
-        from megatron.training.global_vars import set_global_variables
+        from megatron.training.global_vars import set_global_variables, get_args
         from megatron.training.tokenizer.tokenizer import _vocab_size_with_padding
         from megatron.legacy import fused_kernels
         from megatron.core import mpu
@@ -153,9 +149,11 @@ def save_checkpoint(queue, args):
         '--num-layers', str(md.num_layers),
         '--hidden-size', str(md.hidden_size),
         '--seq-length', str(md.seq_length),
+        '--num-experts', str(getattr(md, "num_experts", 0)),
         '--num-attention-heads', str(md.num_attention_heads),
         '--max-position-embeddings', str(md.max_position_embeddings),
         '--position-embedding-type', str(md.position_embedding_type),
+        '--tokenizer-type', str(md.tokenizer_type),
         '--tensor-model-parallel-size', str(args.target_tensor_parallel_size),
         '--pipeline-model-parallel-size', str(args.target_pipeline_parallel_size),
         '--expert-model-parallel-size', str(args.target_expert_parallel_size),
@@ -173,18 +171,14 @@ def save_checkpoint(queue, args):
         '--no-save-optim',
         '--no-save-rng',
         '--save-interval', '1',
-        '--save', args.save_dir
+        '--save', args.save_dir,
+        '--ckpt-format', 'torch', # only 'torch' supported for conversion
     ]
     if args.target_num_experts is not None:
         sys.argv.extend(['--num-experts', str(args.target_num_experts)])
         sys.argv.append('--sequence-parallel')
     if not args.build_model_with_initialization:
         sys.argv.append('--no-initialization')
-    if args.target_num_experts_split is not None:
-        sys.argv.extend(['--multimodal-num-experts-split', str(args.target_num_experts_split)])
-    if args.use_multimodal_router:
-        sys.argv.extend(['--use-multimodal-router-mlp'])
-        sys.argv.extend(['--use-multimodal-router-attn'])
 
     if md.make_vocab_size_divisible_by is not None:
         sys.argv.extend(['--make-vocab-size-divisible-by', str(md.make_vocab_size_divisible_by)])
@@ -214,20 +208,21 @@ def save_checkpoint(queue, args):
     if hasattr (md, 'checkpoint_args'):
         # These are arguments that we are either changing, or cause problems for validation if they are set
         # Note that some of these deal with T5 so will need to be changed if we support T5.
-        args_to_keep = ['tensor_model_parallel_size', 'pipeline_model_parallel_size', 'world_size', 'params_dtype',
+        args_to_keep = ['tensor_model_parallel_size', 'pipeline_model_parallel_size', 'expert_model_parallel_size', 'world_size', 'params_dtype',
                         'num_layers_per_virtual_pipeline_stage', 'virtual_pipeline_model_parallel_size',
                         'masked_softmax_fusion', 'bias_gelu_fusion', 'bias_dropout_fusion',
                         'sequence_parallel', 'async_tensor_model_parallel_allreduce',
                         'no_load_optim', 'no_load_rng', 'no_save_optim', 'no_save_rng',
-                        'tokenizer_model', 'expert_model_parallel_size',
+                        'vocab_file', 'tokenizer_model',
                         'save_interval', 'save', 'load', 'use_mcore_models', 'num_experts',
                         'perform_initialization', 'use_cpu_initialization',
                         'recompute_granularity', 'recompute_num_layers', 'recompute_method',
                         'encoder_num_layers', 'encoder_seq_length',
-                        'distribute_saved_activations', 'fp16', 'bf16',
+                        'distribute_saved_activations', 'fp16', 'bf16', 'context_parallel_size',
                         'train_iters', 'lr_decay_iters', 'lr_warmup_iters', 'lr_warmup_fraction',
-                        'start_weight_decay', 'end_weight_decay', 'context_parallel_size',
-                        'multimodal_num_experts_split', 'use_multimodal_router_mlp', 'use_multimodal_router_attn']
+                        'start_weight_decay', 'end_weight_decay',
+                        'ckpt_format',
+        ]
 
         for arg, value in vars(md.checkpoint_args).items():
             if arg in args_to_keep:
@@ -239,8 +234,32 @@ def save_checkpoint(queue, args):
                 print(f"Overwriting default {arg} value {getattr(margs, arg)} with value from checkpoint {value}.")
                 setattr(margs, arg, value)
 
+    # Explicitly copy sequence_parallel, apply_query_key_layer_scaling.
+    margs.sequence_parallel = md.checkpoint_args.sequence_parallel
+    margs.apply_query_key_layer_scaling = md.checkpoint_args.apply_query_key_layer_scaling
+
+    # Sequence parallel is required if use both tensor-parallel and Moe.
+    if margs.num_experts is not None and args.target_tensor_parallel_size is not None:
+        if margs.num_experts > 1 and args.target_tensor_parallel_size > 1:
+            margs.sequence_parallel = True
+
     print("*"*20 + "validate saver arguments" + "*"*20)
-    margs = validate_args(margs)
+    validate_args(margs)
+
+    # Use M-core models & unset loaded paths.
+    margs.use_legacy_models = False
+    margs.blendable_index_path = None
+    margs.data_path = []
+    margs.load = None
+    margs.save = args.save_dir
+    margs.tensorboard_dir = None
+    margs.tokenizer_model = None
+    margs.transformer_impl = "transformer_engine"
+
+    set_global_variables(margs, build_tokenizer=False)
+
+    # Megatron args. (i.e., 'margs')
+    margs = get_args()
 
     # validate consumed_samples
     if hasattr(md, 'consumed_train_samples'):
@@ -257,6 +276,7 @@ def save_checkpoint(queue, args):
     if md.true_vocab_size is not None:
         margs.vocab_size = md.true_vocab_size
         if getattr(md, "true_language_vocab_size", None):
+            margs.language_vocab_size = md.true_language_vocab_size
             margs.language_padded_vocab_size = _vocab_size_with_padding(
                 md.true_language_vocab_size, margs
             )
@@ -277,9 +297,6 @@ def save_checkpoint(queue, args):
     """
     use megatron args build object and init env
     """
-
-    # build global variable (eg: tokenizer)
-    set_global_variables(margs, build_tokenizer=False)
 
     # fake initializing distributed
     tp_size = margs.tensor_model_parallel_size
@@ -354,7 +371,7 @@ def save_checkpoint(queue, args):
             msg = queue_get()
             if msg != "done":
                 print("ERROR: got some more data but was expecting to be done")
-        margs.use_dist_ckpt = False
+
         for tp_ep_rank, model in enumerate(models):
             tp_rank = tp_ep_rank % tp_size
             ep_rank = tp_ep_rank // tp_size
@@ -363,6 +380,11 @@ def save_checkpoint(queue, args):
             checkpoint_name = get_checkpoint_name(margs.save, md.iteration)
             print(f"megtron model is saving to {checkpoint_name} ...")
             save_checkpoint(md.iteration, [model], None, None,
-                            num_floating_point_operations_so_far=0)
+                            num_floating_point_operations_so_far=0,
+                            pipeline_rank=pp_rank, pipeline_parallel=args.target_pipeline_parallel_size > 1,
+                            expert_rank=ep_rank, expert_parallel=args.target_expert_parallel_size > 1,
+                            tensor_rank=tp_rank)
+            # release the uselese model parts
+            models[tp_ep_rank] = None
 
     print("SAVE DONE!!!")

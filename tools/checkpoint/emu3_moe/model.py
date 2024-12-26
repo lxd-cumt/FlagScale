@@ -9,10 +9,10 @@ model_type = ModelType.encoder_or_decoder # Megatron's model_type
 
 def get_hf_model(dtype, model_path=None, config=None):
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
-    from examples.emu3.emu3_moe.modeling_llama import LlamaForCausalLM
+    from examples.emu.emu3_moe.modeling_mixtral import MixtralForCausalLM
     s_time = time.time()
     if config is None:
-        model = LlamaForCausalLM.from_pretrained(
+        model = MixtralForCausalLM.from_pretrained(
             model_path, device_map="cpu", trust_remote_code=True, torch_dtype=dtype
         )
     elif model_path is None:
@@ -20,7 +20,7 @@ def get_hf_model(dtype, model_path=None, config=None):
         from accelerate.utils import set_module_tensor_to_device
 
         with init_empty_weights():
-            model = LlamaForCausalLM._from_config(
+            model = MixtralForCausalLM._from_config(
                 config, torch_dtype=dtype
             )
         for name, param in model.named_parameters():

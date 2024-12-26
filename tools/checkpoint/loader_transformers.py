@@ -3,6 +3,8 @@ import sys
 import types
 import importlib
 
+from utils import print_memory_usage
+
 
 def add_arguments(parser):
     group = parser.add_argument_group(title='Transformers loader')
@@ -11,6 +13,11 @@ def add_arguments(parser):
                        help='original size of vocab, if specified will trim padding from embedding table.')
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of deepspeed repository')
+    group.add_argument('--position-embedding-type',
+                    type=str,
+                    default='learned_absolute',
+                    choices=['learned_absolute', 'rope'],
+                    help='Position embedding type.')
 
     # for emu model
     group.add_argument('--true-language-vocab-size', type=int, default=None,
@@ -82,12 +89,15 @@ def _load_checkpoint(queue, args):
         '--micro-batch-size', '1',
         '--no-load-optim',
         '--no-load-rng',
-        '--use-mcore-models',
-        '--transformer-impl', 'transformer_engine',
         '--no-save-optim',
         '--no-save-rng',
         '--no-initialization',
-        '--load', args.load_dir
+        '--mock-data', # To pass the "blend data checks" in arguments.py
+        '--use-mcore-models',
+        '--transformer-impl', 'transformer_engine',
+        '--load', args.load_dir,
+        '--position-embedding-type', args.position_embedding_type,
+        '--exit-on-missing-checkpoint',
     ]
 
     margs = parse_args(add_flagscale_args)
@@ -157,6 +167,7 @@ def _load_checkpoint(queue, args):
 
     # get transformers model
     hf_model = model_plugin.get_hf_model(margs.params_dtype, margs.load)
+    print_memory_usage("loader", 0, 0)
 
     """
     start sending ckpt

@@ -6,6 +6,8 @@ import importlib
 
 import torch
 
+from utils import print_memory_usage
+
 
 def add_arguments(parser):
     group = parser.add_argument_group(title='Megatron loader')
@@ -14,6 +16,11 @@ def add_arguments(parser):
                        help='original size of vocab, if specified will trim padding from embedding table.')
     group.add_argument('--megatron-path', type=str, default=None,
                        help='Base directory of megatron repository')
+    group.add_argument('--position-embedding-type',
+                    type=str,
+                    default='learned_absolute',
+                    choices=['learned_absolute', 'rope'],
+                    help='Position embedding type.')
 
     # for emu model
     group.add_argument('--true-language-vocab-size', type=int, default=None,
@@ -92,8 +99,9 @@ def _load_checkpoint(queue, args):
         '--mock-data', # To pass the "blend data checks" in arguments.py
         '--use-mcore-models',
         '--transformer-impl', 'transformer_engine',
+        '--load', args.load_dir,
+        '--position-embedding-type', args.position_embedding_type,
         '--exit-on-missing-checkpoint',
-        '--load', args.load_dir
     ]
 
     margs = parse_args(add_flagscale_args)
@@ -110,13 +118,6 @@ def _load_checkpoint(queue, args):
     _set_arg("language_padded_vocab_size")
     _set_arg("vision_padded_vocab_size")
     _set_arg("make_vocab_size_divisible_by")
-    _set_arg("multimodal_num_experts_split")
-    _set_arg("use_multimodal_router_mlp")
-    _set_arg("use_multimodal_router_attn")
-    _set_arg("multimodal_freeze_language_parameters")
-    _set_arg("multimodal_moe_router_load_balancing_type")
-    _set_arg("multimodal_moe_router_topk")
-    _set_arg("multimodal_moe_aux_loss_coeff")
     _set_arg("multimodal_visual_start_end_tokens")
     # ==================================================
 
@@ -160,6 +161,7 @@ def _load_checkpoint(queue, args):
     check_for_arg('num_attention_heads')
     check_for_arg('max_position_embeddings')
     check_for_arg('position_embedding_type')
+    check_for_arg('tokenizer_type')
     check_for_arg('iteration')
     check_for_arg('bert_binary_head')
     check_for_arg('params_dtype')
@@ -212,7 +214,7 @@ def _load_checkpoint(queue, args):
     md.seq_length = margs.seq_length
     md.num_attention_heads = margs.num_attention_heads
     md.max_position_embeddings = margs.max_position_embeddings
-    # md.tokenizer_type = margs.tokenizer_type
+    md.tokenizer_type = margs.tokenizer_type
     md.iteration = margs.iteration
     md.params_dtype = margs.params_dtype
     md.output_layer = margs.untie_embeddings_and_output_weights
@@ -277,6 +279,9 @@ def _load_checkpoint(queue, args):
 
             for vp_rank in range(vp_size):
                 models[vp_rank].append(model_[vp_rank])
+
+            # Print memory usage.
+            print_memory_usage("loader", rank_id, count)
 
         return models
 

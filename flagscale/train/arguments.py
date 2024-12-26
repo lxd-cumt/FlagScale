@@ -238,25 +238,6 @@ def _add_emu_args(parser):
     group.add_argument('--multimodal-visual-start-end-tokens', type=int, nargs=3, default=None)
     group.add_argument('--multimodal-visual-loss-weight', type=float, default=None)
     group.add_argument("--multimodal-token-dropping", type=float, default=0.)
-    group.add_argument("--use-multimodal-router-attn", action="store_true")
-    group.add_argument("--use-multimodal-router-mlp", action='store_true')
-
-    group.add_argument('--multimodal-num-experts-split', type=int, default=None,
-                       help='Split num_experts two parts, the former is belong to language, the post is belong to vision')
-    group.add_argument('--multimodal-moe-router-load-balancing-type', type=str, nargs=2,
-                       choices=['aux_loss', 'sinkhorn', "none"],
-                       default=['aux_loss', 'aux_loss'],
-                       help='Determines the load balancing strategy for the router. "aux_loss" corresponds to the load balancing loss used in GShard and SwitchTransformer, "sinkhorn" corresponds to the balancing algorithm used in S-BASE, and "none" implies no load balancing. The default is "aux_loss".')
-    group.add_argument('--multimodal-moe-router-topk', type=int, nargs=2, default=[2, 2],
-                       help='Number of experts to route to for each token. The default is 2.')
-    group.add_argument('--multimodal-moe-aux-loss-coeff', type=float, nargs=2, default=[0.02, 0.02],
-                       help='Scaling coefficient for the aux loss: a starting value of 1e-2 is recommended.')
-    group.add_argument('--multimodal-moe-z-loss-coeff', type=float, nargs=2, default=[None, None],
-                       help='Scaling coefficient for the z-loss: a starting value of 1e-3 is recommended.')
-    group.add_argument('--multimodal-moe-input-jitter-eps', type=float, nargs=2, default=[None, None],
-                       help='Add noise to the input tensor by applying jitter with a specified epsilon value.')
-    group.add_argument('--multimodal-moe-token-dropping', type=bool, nargs=2, default=[False, False],
-                       help='This feature involves selectively dropping and padding tokens for each expert to achieve a specified capacity, similar to GShard, Switch-Transformer, and DeepSpeed-MoE. Note: Currently unsupported.')
 
     group.add_argument('--moe-tokens-per-expert-logging', action='store_true',
                        help="Whether to log tokens_per_expert for each layer and avg all layers."
