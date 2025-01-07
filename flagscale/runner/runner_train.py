@@ -122,7 +122,7 @@ def _get_runner_cmd_train(
     rdzv_id = runner_config.get("rdzv_id", "default")
     log_dir = runner_config.get("log_dir", logging_config.details_dir)
     log_dir = os.path.abspath(log_dir)
-    no_shared_fs = config.experiment.get("no_shared_fs", False)
+    no_shared_fs = runner_config.get("no_shared_fs", False)
     if no_shared_fs:
         log_dir = os.path.join(log_dir, f"host")
     else:
@@ -225,7 +225,7 @@ def _generate_run_script_train(
         f.write(f"\n")
         f.write(f"cd {root_dir}\n")
         f.write(f"\n")
-        f.write(f"export PYTHONPATH={megatron_dir}:{root_dir}\n")
+        f.write(f"export PYTHONPATH={megatron_dir}:{root_dir}:${{PYTHONPATH}}\n")
         f.write(f"\n")
         f.write(f'cmd="{cmd}"\n')
         f.write(f"\n")

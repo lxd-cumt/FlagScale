@@ -15,7 +15,7 @@ from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.transformer.transformer_layer import BaseTransformerLayer
+from megatron.core.transformer.transformer_layer import BaseTransformerLayer, TransformerLayer
 from megatron.core.transformer.utils import sharded_state_dict_default
 from megatron.core.utils import is_te_min_version, make_viewless_tensor
 
@@ -83,7 +83,7 @@ def get_num_layers_to_build(config: TransformerConfig) -> int:
         pipeline_ranks = config.pipeline_model_parallel_size
         num_layers_per_pipeline_rank = config.num_layers // pipeline_ranks
 
-    if parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None:
+    if parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None and parallel_state.get_virtual_pipeline_model_parallel_world_size() > 1:
         # Interleaved pipeline parallelism:
         # Number of layers in each model chunk is the number of layers in the stage,
         # divided by the number of model chunks in a stage.
@@ -652,6 +652,12 @@ class TransformerBlock(MegatronModule):
         non_homogeneous_layers = metadata is not None and metadata.get(
             'non_homogeneous_layers', False
         )
+        if isinstance(self.config.moe_layer_freq, int):
+            if self.config.moe_layer_freq > 1:
+                non_homogeneous_layers = True
+        elif isinstance(self.config.moe_layer_freq, list):
+            non_homogeneous_layers = True
+
 
         # TODO: @aoyulong - This is a temporary solution to support single-file-per-tensor ckpt
         non_homogeneous_layers_env = os.getenv('FS_NON_HOMOGENEOUS_LAYERS', 'False').lower() in (
@@ -667,7 +673,7 @@ class TransformerBlock(MegatronModule):
         layer_prefix = f'{prefix}layers.'
         num_layers = self.config.num_layers
         for layer in self.layers:
-            offset = layer._get_layer_offset()
+            offset = TransformerLayer._get_layer_offset(self.config)
 
             global_layer_offset = layer.layer_number - 1  # self.layer_number starts at 1
             state_dict_prefix = f'{layer_prefix}{global_layer_offset - offset}.'  # module list index in TransformerBlock # pylint: disable=line-too-long
