@@ -255,9 +255,8 @@ python convert.py \
     --true-vocab-size 151851 \
 ```
 
-
-<!-- ROADMAP -->
-## Roadmap
+## Contribution
+### Roadmap
 See the [FlagAI-Open OpenSeek](https://github.com/FlagAI-Open/OpenSeek) for a full list of proposed features .
 
 - [x] Enhance the distributed training documentation
@@ -281,3 +280,35 @@ See the [FlagAI-Open OpenSeek](https://github.com/FlagAI-Open/OpenSeek) for a fu
 - [ ] Collaborate with algorithm teams to achieve more efficient long sequence optimization
 - [ ] Implement customized parallel and optimization strategies for specific chips
 - [ ] Implement more innovative FP8 training solutions
+
+### Steps
+- fork [FlagScale](https://github.com/FlagOpen/FlagScale) to your own github repo
+- generate a copy of the FlagScale repo under your account, with a URL like https://github.com/your-own-id/FlagScale
+-  clone the forked repo to your local machine and navigate into the local FlagScale
+    ```sh
+    git clone https://github.com/your-own-id/FlagScale.git
+    cd FlagScale
+    ```
+- add the upstream repo, thus keeping your fork updated with changes from the original FlagScale repo
+    ```sh
+    git remote add upstream https://github.com/FlagOpen/FlagScale
+    ```
+- create a new branch and start development
+    ```sh
+    git checkout -b feature/my-new-feature
+    ```
+-  commit your changes
+    ```sh
+    git add .
+    git commit -m "Add my new feature"
+    ```
+-  push your new branch to your gitHub repo
+    ```sh
+    git push origin feature/my-new-feature
+    ```
+- create a pull request (PR) for FlagScale
+  - open your github repo page (https://github.com/your-own-id/FlagScale)
+  - you will see a prompt with a Compare & pull request button for your newly pushed branch
+  - click this button to go to the Pull Request page
+- wait for review and merge
+- ...
