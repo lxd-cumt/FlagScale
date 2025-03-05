@@ -3,9 +3,6 @@
 
 The OpenSeek project uses [FlagScale](https://github.com/FlagOpen/FlagScale.git) as the distributed training framework. This framework is an end-to-end framework for large models across multiple chips, built entirely on open source technology by the Beijing Academy of Artificial Intelligence (BAAI) in collaboration with ecosystem partners, maximizing computational resource efficiency while ensuring model effectiveness.
 
-
-This project uses [FlagScale](https://github.com/FlagOpen/FlagScale.git) as the distributed training framework. This framework is an end-to-end framework for large models across multiple chips, built entirely on open source technology by the Beijing Academy of Artificial Intelligence (BAAI) in collaboration with ecosystem partners, maximizing computational resource efficiency while ensuring model effectiveness.
-
 <div align="center">
   <img src="./flagscale.png" alt="FlagScale Architecture" width="600">
 </div>
