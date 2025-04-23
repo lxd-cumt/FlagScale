@@ -137,7 +137,6 @@ def print_datetime(string):
 
 
 def num_floating_point_operations(args, batch_size):
-    # print(f"in num_floating_point_operations")
     def transformer_flops():
 
         # Part 1: Attention ======================================================================
@@ -315,7 +314,6 @@ def num_floating_point_operations(args, batch_size):
 
     # Compute standard Transformer model FLOPs.
     flops_fwd = transformer_flops()
-    # print(f"in num_floating_point_operations, return flops_fwd")
     return flops_fwd * 3
 
 
@@ -1235,14 +1233,13 @@ def train_step(forward_step_func, data_iterator,
         return loss_reduced, skipped_iter, should_checkpoint, should_exit, exit_code, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, should_checkpoint, should_exit, exit_code, grad_norm, num_zeros_in_grad
 
+
 def train_step_for_dualpipev(forward_step_func, data_iterator,
                model, optimizer, opt_param_scheduler, config):
     """Single training step."""
-    # print(f"call train step for dualpipev")
     args = get_args()
     timers = get_timers()
 
-    # print(f"call rerun state machine")
     rerun_state_machine = get_rerun_state_machine()
     while rerun_state_machine.should_run_forward_backward(data_iterator):
         # Set grad to zero.
@@ -1250,7 +1247,6 @@ def train_step_for_dualpipev(forward_step_func, data_iterator,
             model_chunk.zero_grad_buffer()
         optimizer.zero_grad()
 
-        # print(f"call forward backward func")
         # Forward pass.
         forward_backward_func = get_forward_backward_func()
         losses_reduced = forward_backward_func(
@@ -1276,7 +1272,6 @@ def train_step_for_dualpipev(forward_step_func, data_iterator,
         unwrapped_model.cancel_gradients_last_layer(args.curr_iteration)
 
     # Update parameters.
-    # print(f"call optimizer step")
     timers('optimizer', log_level=1).start(barrier=args.barrier_with_L1_time)
     update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
     timers('optimizer').stop()
@@ -1309,7 +1304,6 @@ def train_step_for_dualpipev(forward_step_func, data_iterator,
     if args.empty_unused_memory_level >= 2:
         torch.cuda.empty_cache()
 
-    # print(f"call processing loss")
     dualpipevlaststage = mpu.is_pipeline_first_stage(ignore_virtual=True)
     if dualpipevlaststage:
         # Average loss across microbatches.
@@ -1373,7 +1367,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
     total_loss_dict[nan_iters_key] = total_loss_dict.get(
         nan_iters_key, 0) + int(got_nan)
 
-    # print(f"call training log, set times to log")
     # Logging.
     timers_to_log = [
         'forward-backward',
@@ -1419,7 +1412,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
        (iteration % args.tensorboard_log_interval == 0):
         timers.write(timers_to_log, writer, iteration,
                      normalizer=total_iterations)
-    # print(f"call log to tensor board")
     if is_last_rank() and (iteration % args.tensorboard_log_interval == 0):
         if wandb_writer:
             wandb_writer.log({'samples vs steps': args.consumed_train_samples},
@@ -1524,31 +1516,24 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
                     iteration,
                 )
 
-    # print(f"call track moe metrics")
     if args.num_experts is not None:
         moe_loss_scale = 1 / get_num_microbatches()
         track_moe_metrics(moe_loss_scale, iteration, writer, wandb_writer, total_loss_dict, args.moe_per_layer_logging, args.enable_hetero)
 
-    # print(f"call training log, dump memory consumption")
     if iteration % args.log_interval == 0:
-        # print(f"call training log, dump")
         if args.record_memory_history and is_last_rank():
             snapshot = torch.cuda.memory._snapshot()
             from pickle import dump
             with open(args.memory_snapshot_path, 'wb') as f:
                 dump(snapshot, f)
-        # print(f"call training log, cal elapsed time and throughput")
         elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
 
-        # print(f"call training log, call num_floating_point_operations")
         throughput = num_floating_point_operations(args, batch_size) / (
             elapsed_time_per_iteration * 10**12 * args.world_size)
 
-        # print(f"call training log, track e2e metrics")
         one_logger_utils.track_e2e_metrics(args.log_throughput, throughput)
 
-        # print(f"call training log, log times to tensorboard")
         if args.log_timers_to_tensorboard:
             if writer:
                 writer.add_scalar('iteration-time',
@@ -1605,7 +1590,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         total_loss_dict[skipped_iters_key] = 0
         total_loss_dict[nan_iters_key] = 0
         print_rank_last(log_string)
-        # print(f"call training log, processes log string")
         if not args.auto_tune:
             if report_memory_flag:
                 # Report memory after optimizer state has been initialized.
@@ -1617,10 +1601,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, decoupled_learning_r
         else:
             report_memory(f'(after {iteration} iterations)')
             report_memory_flag = False
-        # print(f"call training log, call timers.log")
         timers.log(timers_to_log, normalizer=args.log_interval)
 
-    # print(f"call training log, return")
     return report_memory_flag
 
 
@@ -1838,7 +1820,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
           process_non_loss_data_func, config, checkpointing_context, non_loss_data_func,
           extra_valid_dataset_provider=None):
     """Training function: run train_step desired number of times, run validation, checkpoint."""
-    # print(f"call train")
+
     args = get_args()
     timers = get_timers()
     one_logger = get_one_logger()
@@ -1851,11 +1833,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         except ModuleNotFoundError:
             print_rank_0("workload inspector module not found.")
 
-    # print(f"call write args to tensorboard")
     # Write args to tensorboard
     write_args_to_tensorboard()
 
-    # print(f"call turn module train mode")
     # Turn on training mode which enables dropout.
     for model_module in model:
         model_module.train()
@@ -1880,7 +1860,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
     num_floating_point_operations_so_far = args.num_floating_point_operations_so_far
 
-    # print(f"call configuration")
     # Setup some training config params.
     config.grad_scale_func = optimizer.scale_loss
     config.timers = timers
@@ -1964,7 +1943,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         with one_logger.get_context_manager():
             one_logger.store_set('get_e2e_base_metrics', get_e2e_base_metrics)
 
-    # print(f"call profile")
     prof = None
     if args.profile and torch.distributed.get_rank() in args.profile_ranks and args.use_pytorch_profiler:
         prof = torch.profiler.profile(
@@ -1996,10 +1974,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         torch.distributed.barrier()
         print_rank_0(f">>> Weight hashes match after {iteration} iterations...")
 
-    # print(f"call train cycle")
     # Run training iterations till done.
     while iteration < args.train_iters:
-        # print(f"call in train cycle, current iteration is {iteration}, train iters is {args.train_iters}")
         if args.profile and torch.distributed.get_rank() in args.profile_ranks:
             if args.use_pytorch_profiler:
                 prof.step()
@@ -2044,7 +2020,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # Run training step.
         args.curr_iteration = iteration
 
-        # print(f"call skip samples range")
         ########## FlagScale Begin ##########
         if args.skip_samples_range or args.skip_iters_range:
             current_global_batch_size = get_current_global_batch_size()
@@ -2076,7 +2051,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 rerun_state_machine.current_iteration = iteration
         ########## FlagScale end ##########
 
-        # print(f"call dualpipev or normal train step")
         ft_integration.on_training_step_start()
         if args.schedules_method == "dualpipev":
             loss_dict, skipped_iter, should_checkpoint, should_exit, exit_code, grad_norm, num_zeros_in_grad = \
@@ -2123,7 +2097,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     config.param_sync_func = param_sync_func
                     pre_hook_enabled = True
 
-        # print(f"call iteration ++")
         iteration += 1
         batch_size = mpu.get_data_parallel_world_size() * \
                      args.micro_batch_size * \
@@ -2147,7 +2120,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             loss_scale = 1.0
         params_norm = None
 
-        # print(f"call reporting training log")
         if args.log_params_norm:
             params_norm = calc_params_l2_norm(model)
         learning_rate = None
@@ -2164,7 +2136,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                           report_memory_flag, skipped_iter,
                                           grad_norm, params_norm, num_zeros_in_grad)
 
-        # print(f"call evaluation")
         # Evaluation.
         if args.eval_interval and iteration % args.eval_interval == 0 and \
             args.do_valid:
@@ -2272,7 +2243,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     if writer:
         writer.flush()
 
-    # print(f"disable pre hook")
     # Close out pre-hooks if using distributed optimizer and overlapped param gather.
     if pre_hook_enabled:
         disable_forward_pre_hook(model)
