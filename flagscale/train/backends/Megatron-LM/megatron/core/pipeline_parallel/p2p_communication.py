@@ -436,7 +436,7 @@ def _communicate(
         else:
             reqs.update(p2p_reqs)
             print(f"DEBUG: Added {len(p2p_reqs)} requests to dict")
-
+    
     if wait_on_reqs and len(reqs) > 0:
         print(f"DEBUG: Waiting on {len(reqs)} requests")
         for req in reqs if isinstance(reqs, list) else reqs.values():
