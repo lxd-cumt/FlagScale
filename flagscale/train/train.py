@@ -41,7 +41,7 @@ try:
 except ImportError:
     HAVE_FSDP2 = False
 
-from megatron.core.distributed import finalize_model_grads
+from megatron.core.distributed import finalize_model_grads, finalize_model_grads_for_dualpipev
 from megatron.core.enums import ModelType
 from megatron.core.optimizer import get_megatron_optimizer, OptimizerConfig
 from megatron.core.rerun_state_machine import (
@@ -1647,11 +1647,9 @@ def enable_forward_pre_hook(model_chunks):
 
 
 def disable_forward_pre_hook(model_chunks, param_sync=True):
-    args = get_args()
-    if args.schedules_method != "dualpipev":
-        for model_chunk in model_chunks:
-            assert isinstance(model_chunk, DDP)
-            model_chunk.disable_forward_pre_hook(param_sync=param_sync)
+    for model_chunk in model_chunks:
+        assert isinstance(model_chunk, DDP)
+        model_chunk.disable_forward_pre_hook(param_sync=param_sync)
 
 
 def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler,
@@ -1820,7 +1818,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
           process_non_loss_data_func, config, checkpointing_context, non_loss_data_func,
           extra_valid_dataset_provider=None):
     """Training function: run train_step desired number of times, run validation, checkpoint."""
-
     args = get_args()
     timers = get_timers()
     one_logger = get_one_logger()
@@ -1878,7 +1875,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         config.param_sync_func = [model_chunk.start_param_sync for model_chunk in model]
         if len(model) == 1:
             config.param_sync_func = config.param_sync_func[0]
-    config.finalize_model_grads_func = finalize_model_grads
+    
+    if args.schedules_method == "dualpipev":
+        config.finalize_model_grads_func = finalize_model_grads
+    else:
+        config.finalize_model_grads_func = finalize_model_grads_for_dualpipev
 
     timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')
@@ -2093,7 +2094,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 # forward passes will use the forward pre-hook / `param_sync_func` in
                 # `forward_backward_func`.
                 if should_disable_forward_pre_hook(args):
-                    # enable_forward_pre_hook(model)
+                    enable_forward_pre_hook(model)
                     config.param_sync_func = param_sync_func
                     pre_hook_enabled = True
 
@@ -2162,7 +2163,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 # Collect only the objects created and used in evaluation.
                 gc.collect(generation=0)
             if should_disable_forward_pre_hook(args):
-                # enable_forward_pre_hook(model)
+                enable_forward_pre_hook(model)
                 pre_hook_enabled = True
             timers('interval-time', log_level=0).start(barrier=True)
 
@@ -2215,7 +2216,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     # Collect only the objects created and used in evaluation.
                     gc.collect(generation=0)
                 if args.use_distributed_optimizer and args.overlap_param_gather:
-                    # enable_forward_pre_hook(model)
+                    enable_forward_pre_hook(model)
                     pre_hook_enabled = True
                 timers('interval-time', log_level=0).start(barrier=True)
 
