@@ -66,6 +66,7 @@ class RotaryEmbedding(nn.Module):
         rope_scaling_factor: float = 8.0,
         use_cpu_initialization: bool = False,
         cp_group: Optional[torch.distributed.ProcessGroup] = None,
+        use_magi_attention: bool = False,
     ) -> None:
         super().__init__()
 
@@ -88,6 +89,8 @@ class RotaryEmbedding(nn.Module):
             if cp_group is not None
             else parallel_state.get_context_parallel_group(check_initialized=False)
         )
+
+        self.use_magi_attention = use_magi_attention
 
     def _apply_scaling(
         self,
@@ -174,7 +177,7 @@ class RotaryEmbedding(nn.Module):
             )
         # emb [seq_length, .., dim]
         emb = emb[:, None, None, :]
-        if self.cp_group is not None and self.cp_group.size() > 1 and not packed_seq:
+        if self.cp_group is not None and self.cp_group.size() > 1 and not packed_seq and not self.use_magi_attention:
             # slice rotary_pos_emb along sequence dimension and select the parition of the current
             # CP rank
             emb = get_pos_emb_on_this_cp_rank(emb, 0, self.cp_group)

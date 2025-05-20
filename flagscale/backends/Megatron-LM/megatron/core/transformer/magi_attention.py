@@ -37,6 +37,7 @@ from megatron.core.utils import deprecate_inference_params
 from magi_attention.common.ranges import AttnRanges
 from magi_attention.common.enum import AttnMaskType as MagiAttnMaskType
 from magi_attention.common.enum import AttnOverlapMode as MagiAttnOverlapMode
+from magi_attention.common.enum import AttnRole as MagiAttnRole
 from magi_attention.api.functools import compute_pad_size, squash_batch_dim
 from magi_attention.api.magi_attn_interface import magi_attn_flex_dispatch, calc_attn, undispatch, get_position_ids
 from magi_attention.config import DistAttnConfig
@@ -341,10 +342,8 @@ class MagiAttention(Attention):
         """
         """
         seq_len, batch_size, hidden_size = hidden_states.shape
-        assert not self.config.sequence_parallel, "currently, magi attention is not support with sequence parallel"
-        assert self.config.context_parallel_size == 1, "currently, magi attention with context parallel is to be checked"
-        assert batch_size == 1, "currently, magi attention only supports micro_batch_size = 1"
-
+        assert not self.config.sequence_parallel, "currently, magi attention in flagscale is not support with sequence parallel"
+        # assert self.config.context_parallel_size == 1, "currently, magi attention with context parallel is to be checked"
 
         # Check if we need to skip RoPE
         # no_rope is 0-indexed array and self.layer_number is 1-indexed
@@ -396,13 +395,12 @@ class MagiAttention(Attention):
         # ================================================
         # relative positional embedding (rotary embedding)
         # ================================================
-        # local_query: [s*b+padding, batch_size=1, nh, hd]
-        local_query = local_query.unsqueeze(1)
-        local_key = local_key.unsqueeze(1)
         position_ids = get_position_ids(magi_attn_runtime_key)
+        print(f"in MagiAttention, position_ids is {position_ids}, shape is {position_ids.shape}")
         if rotary_pos_emb is not None and not self.config.flash_decode:
             q_pos_emb, k_pos_emb = rotary_pos_emb
-
+            print(f"in MagiAttention, q_pos_emb is {q_pos_emb}, shape is {q_pos_emb.shape}")
+            print(f"in MagiAttention, k_pos_emb is {k_pos_emb}, shape is {k_pos_emb.shape}")
             if packed_seq_params is not None:
                 if packed_seq_params.cu_seqlens_q_padded is not None:
                     cu_seqlens_q = packed_seq_params.cu_seqlens_q_padded
@@ -444,10 +442,6 @@ class MagiAttention(Attention):
             # absolute positional embedding.
             # otherwise, only relative positional embedding takes effect
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
-
-        ## [s*b+padding, batch_size=1, nh, hd] -> [s*b+padding, nh, hd]
-        local_query = local_query.squeeze(1)
-        local_key = local_key.squeeze(1)
 
         # ==================================
         # core attention computation

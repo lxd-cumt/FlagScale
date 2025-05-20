@@ -127,8 +127,12 @@ def _apply_rotary_pos_emb_bshd(
 
     # # for magi-attention
     if position_ids is not None:
+        print(f"before position_ids, cos_ shape is {cos_.shape}")
         cos_ = cos_[position_ids]
         sin_ = sin_[position_ids]
+        cos_ = cos_.view(cos_.shape[0]*cos_.shape[1], cos_.shape[2], cos_.shape[3])
+        sin_ = sin_.view(sin_.shape[0]*sin_.shape[1], sin_.shape[2], sin_.shape[3])
+        print(f"after position_ids, cos_ shape is {cos_.shape}")
 
     t = (t * cos_) + (_rotate_half(t, rotary_interleaved) * sin_)
     return torch.cat((t, t_pass), dim=-1)

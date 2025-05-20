@@ -148,6 +148,7 @@ class GPTModel(LanguageModule):
                 rope_scaling=rope_scaling,
                 rope_scaling_factor=rope_scaling_factor,
                 use_cpu_initialization=self.config.use_cpu_initialization,
+                use_magi_attention=self.config.magi_attention,
             )
 
         elif self.position_embedding_type == 'mrope' and not self.config.multi_latent_attention:

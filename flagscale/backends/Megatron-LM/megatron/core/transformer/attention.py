@@ -555,6 +555,7 @@ class Attention(MegatronModule, ABC):
             (Tuple[Tensor, Tensor]) Attention output and bias.
 
         """
+        print(f"in Attention.forward, hidden_states shape is {hidden_states.shape}")
         # Check if we need to skip RoPE
         # no_rope is 0-indexed array and self.layer_number is 1-indexed
         no_rope = (
@@ -585,7 +586,9 @@ class Attention(MegatronModule, ABC):
         # =====================
         # Get the query, key and value tensors based on the type of attention -
         # self or cross attn.
+        print(f"in Attention.forward, before get_query_key_value_tensors, hidden_states shape is {hidden_states.shape}")
         query, key, value = self.get_query_key_value_tensors(hidden_states, key_value_states)
+        print(f"in Attention.forward, after get_query_key_value_tensors, query shape is {query.shape}")
 
         # ===================================================
         # Adjust key, value, and rotary_pos_emb for inference
@@ -643,6 +646,8 @@ class Attention(MegatronModule, ABC):
         # ================================================
         if rotary_pos_emb is not None and not self.config.flash_decode:
             q_pos_emb, k_pos_emb = rotary_pos_emb
+            print(f"in Attention.forward, q_pos_emb shape is {q_pos_emb.shape}")
+            print(f"in Attention.forward, k_pos_emb shape is {k_pos_emb.shape}")
 
             if packed_seq_params is not None:
                 if packed_seq_params.cu_seqlens_q_padded is not None:
@@ -666,6 +671,7 @@ class Attention(MegatronModule, ABC):
                         cu_seqlens=cu_seqlens_q,
                         cp_group=self.model_comm_pgs.cp,
                     )
+                    print(f"in Attention.forward, after apply_roraty_pos_emb, query shape is {query.shape}")
                 else:
                     query = inference_context.apply_rotary_emb_query(
                         query, q_pos_emb, self.config, cu_seqlens_q, self.model_comm_pgs.cp
@@ -678,6 +684,7 @@ class Attention(MegatronModule, ABC):
                     cu_seqlens=cu_seqlens_kv,
                     cp_group=self.model_comm_pgs.cp,
                 )
+                print(f"in Attention.forward, after apply_rotary_pos_emb, key shape is {key.shape}")
 
             # TODO, can apply positional embedding to value_layer so it has
             # absolute positional embedding.
@@ -688,6 +695,7 @@ class Attention(MegatronModule, ABC):
         # core attention computation
         # ==================================
 
+        print(f"in Attention.forward, after rope before core attention, query shape is {query.shape}")
         if self.checkpoint_core_attention and self.training:
             core_attn_out = self._checkpointed_attention_forward(
                 query,
@@ -740,11 +748,13 @@ class Attention(MegatronModule, ABC):
             # note that batch is a dummy dimension in the packed case
             core_attn_out = core_attn_out.reshape(core_attn_out.size(0), 1, -1)
 
+        print(f"in Attention.forward, after core attention, core_attn_out shape is {core_attn_out.shape}")
         # =================
         # Output. [sq, b, h]
         # =================
 
         output, bias = self.linear_proj(core_attn_out)
+        print(f"in Attention.forward, after linear_proj, output shape is {output.shape}")
 
         return output, bias
 
@@ -907,7 +917,9 @@ class SelfAttention(Attention):
         Derives `query`, `key` and `value` tensors from `hidden_states`.
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
+        print(f"in SelfAttention.get_query_key_value_tensors, hidden_states shape is {hidden_states.shape}")
         mixed_qkv, _ = self.linear_qkv(hidden_states)
+        print(f"in SelfAttention.get_query_key_value_tensors, mixed_qkv shape is {mixed_qkv.shape}")
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         new_tensor_shape = mixed_qkv.size()[:-1] + (
@@ -965,7 +977,9 @@ class SelfAttention(Attention):
 
         if self.config.test_mode:
             self.run_realtime_tests()
-
+        print(f"in SelfAttention.get_query_key_value_tensors, when return query shape is {query.shape}")
+        print(f"in SelfAttention.get_query_key_value_tensors, when return key shape is {key.shape}")
+        print(f"in SelfAttention.get_query_key_value_tensors, when return value shape is {value.shape}")
         return query, key, value
 
 
