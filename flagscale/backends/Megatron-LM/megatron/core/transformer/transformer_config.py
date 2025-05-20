@@ -149,6 +149,9 @@ class TransformerConfig(ModelParallelConfig):
     multi_latent_attention: bool = False
     """Whether to use multi-latent attention."""
 
+    magi_attention: bool = False
+    """Whether to use magi_attention."""
+
     no_rope_freq: Optional[Union[int, List[int]]] = None
     """Controls which layers perform Rotary Position Embedding (RoPE). Accepts either:
     An integer N: Creates a pattern where RoPE is skipped every N-1 layers. For example,
@@ -1199,3 +1202,39 @@ class MLATransformerConfig(TransformerConfig):
 
     mscale_all_dim: float = 0.707
     """Mscale all dimensions for YaRN RoPE in Multi-Latent Attention, used by yarn."""
+
+
+@dataclass
+class MagiAttentionTransformerConfig(TransformerConfig):
+    """Configuration object for Magi Attention transformers.
+    """
+
+    """
+    Dispatch Config
+    """
+    magi_dispatch_alg: str = "min_heap"
+
+    """
+    OverlapConfig
+    """
+    magi_overlap_enable: bool = True
+
+    magi_overlap_mode: str = "static"
+
+    magi_degree: int = 1
+
+    magi_dynamic_max_degree: Optional[int] = 8
+
+    magi_min_chunk_size: int = 512
+
+    magi_max_num_chunks: int = 64
+    
+    magi_overlap_alg: str = "uniform"
+
+    magi_calc_cost_factor: float = 1.0
+
+    magi_comm_cost_factor: float = 1.0
+
+    magi_high_bandwidth_domain_size: int = 1
+
+    magi_deterministic: bool = False

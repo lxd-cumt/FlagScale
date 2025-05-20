@@ -35,6 +35,8 @@ from megatron.training.yaml_arguments import core_transformer_config_from_yaml
 
 import megatron.legacy.model  # isort: skip
 
+from megatron.core.transformer.magi_attention import MagiAttentionSlices
+
 # NOTE: Loading `megatron.legacy.model` earlier fails due to circular import
 
 try:
@@ -139,6 +141,7 @@ def model_provider(
                         args.moe_grouped_gemm,
                         args.qk_layernorm,
                         args.multi_latent_attention,
+                        args.magi_attention,
                         args.moe_use_legacy_grouped_gemm,
                     )
                 else:
@@ -147,6 +150,7 @@ def model_provider(
                         args.moe_grouped_gemm,
                         args.qk_layernorm,
                         args.multi_latent_attention,
+                        args.magi_attention,
                         args.moe_use_legacy_grouped_gemm,
                         normalization=args.normalization,
                     )
@@ -278,13 +282,32 @@ def forward_step(data_iterator, model: GPTModel):
         tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data_iterator)
     timers('batch-generator').stop()
 
+    # # # User-defined attention mask
+    if args.magi_attention:
+        from magi_attention.common.enum import AttnMaskType as MagiAttnMaskType
+        seq_length = args.seq_length
+        magi_attention_slices = MagiAttentionSlices(
+            q_ranges = [[0, seq_length // 2], [seq_length // 2, seq_length]],
+            k_ranges = [[0, seq_length // 2], [seq_length // 2, seq_length]],
+            magi_attn_mask_type = [MagiAttnMaskType.CAUSAL, MagiAttnMaskType.FULL],
+        )
+
+
     with stimer:
         if args.use_legacy_models:
-            output_tensor = model(tokens, position_ids, attention_mask, labels=labels)
+            if args.magi_attention:
+                output_tensor = model(tokens, position_ids, attention_mask, magi_attention_slices=magi_attention_slices, labels=labels)
+            else:
+                output_tensor = model(tokens, position_ids, attention_mask, labels=labels)
         else:
-            output_tensor = model(
-                tokens, position_ids, attention_mask, labels=labels, loss_mask=loss_mask
-            )
+            if args.magi_attention:
+                output_tensor = model(
+                    tokens, position_ids, attention_mask, magi_attention_slices=magi_attention_slices, labels=labels, loss_mask=loss_mask,
+                )
+            else:
+                output_tensor = model(
+                    tokens, position_ids, attention_mask, labels=labels, loss_mask=loss_mask
+                )
 
     # [ModelOpt]: model is needed to access ModelOpt distillation losses
     return output_tensor, partial(loss_func, loss_mask, model=model)

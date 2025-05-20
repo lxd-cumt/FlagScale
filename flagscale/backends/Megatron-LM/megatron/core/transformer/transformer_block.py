@@ -26,6 +26,8 @@ from megatron.core.transformer.transformer_layer import (
 from megatron.core.transformer.utils import sharded_state_dict_default
 from megatron.core.utils import WrappedTensor, deprecate_inference_params, make_viewless_tensor
 
+from megatron.core.transformer.magi_attention import MagiAttentionSlices
+
 try:
     from megatron.core.extensions.transformer_engine import (
         TENorm,
@@ -345,6 +347,7 @@ class TransformerBlock(MegatronModule):
         self,
         hidden_states: Tensor,
         attention_mask: Tensor,
+        magi_attention_slices: MagiAttentionSlices,
         context: Tensor,
         context_mask: Tensor,
         rotary_pos_emb: Tensor,
@@ -356,7 +359,7 @@ class TransformerBlock(MegatronModule):
 
         def custom(start: int, end: int):
             def custom_forward(
-                hidden_states, attention_mask, context, context_mask, rotary_pos_emb
+                hidden_states, attention_mask, magi_attention_slices, context, context_mask, rotary_pos_emb
             ):
                 for index in range(start, end):
                     layer = self._get_layer(index)
@@ -369,6 +372,7 @@ class TransformerBlock(MegatronModule):
                         hidden_states, context = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,
+                            magi_attention_slices=magi_attention_slices,
                             context=context,
                             context_mask=context_mask,
                             rotary_pos_emb=rotary_pos_emb,
@@ -390,6 +394,7 @@ class TransformerBlock(MegatronModule):
                     parallel_state.get_tensor_model_parallel_group(),
                     hidden_states,
                     attention_mask,
+                    magi_attention_slices,
                     context,
                     context_mask,
                     rotary_pos_emb,
@@ -400,6 +405,7 @@ class TransformerBlock(MegatronModule):
                     self.config.distribute_saved_activations,
                     hidden_states,
                     attention_mask,
+                    magi_attention_slices,
                     context,
                     context_mask,
                     rotary_pos_emb,
@@ -435,7 +441,7 @@ class TransformerBlock(MegatronModule):
                     hidden_states, context = checkpoint_handler(custom(layer_idx, layer_idx + 1))
                 else:
                     hidden_states, context = custom(layer_idx, layer_idx + 1)(
-                        hidden_states, attention_mask, context, context_mask, rotary_pos_emb
+                        hidden_states, attention_mask, magi_attention_slices, context, context_mask, rotary_pos_emb
                     )
         else:
             raise ValueError("Invalid activation recompute method.")
@@ -456,6 +462,7 @@ class TransformerBlock(MegatronModule):
         self,
         hidden_states: Union[Tensor, WrappedTensor],
         attention_mask: Optional[Tensor],
+        magi_attention_slices: MagiAttentionSlices,
         context: Optional[Tensor] = None,
         context_mask: Optional[Tensor] = None,
         rotary_pos_emb: Optional[Tensor] = None,
@@ -481,6 +488,7 @@ class TransformerBlock(MegatronModule):
                 reference in the calling function.
             attention_mask (Tensor): Boolean tensor of shape [1, 1, s, s] for masking
                 self-attention.
+            magi_attention_slices (MagiAttentionSlices):  User-defined attention mask.
             context (Tensor, optional): Context tensor for cross-attention.
             context_mask (Tensor, optional): Mask for cross-attention context
             rotary_pos_emb (Tensor, optional): Rotary positional embeddings.
@@ -621,6 +629,7 @@ class TransformerBlock(MegatronModule):
                 hidden_states = self._checkpointed_forward(
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
+                    magi_attention_slices=magi_attention_slices,
                     context=context,
                     context_mask=context_mask,
                     rotary_pos_emb=rotary_pos_emb,
@@ -639,6 +648,7 @@ class TransformerBlock(MegatronModule):
                         hidden_states, context = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,
+                            magi_attention_slices=magi_attention_slices,
                             context=context,
                             context_mask=context_mask,
                             rotary_pos_emb=rotary_pos_emb,

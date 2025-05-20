@@ -57,6 +57,9 @@ model:
   no_position_embedding: true
   no_rope_fusion: true
 
+  # magi attention
+  magi_attention: true
+
   # training
   seed: ${experiment.seed}
   # finetune: false

@@ -15,6 +15,9 @@ from megatron.core.transformer.multi_latent_attention import (
     MLASelfAttention,
     MLASelfAttentionSubmodules,
 )
+from megatron.core.transformer.magi_attention import (
+    MagiAttention,
+)
 from megatron.core.transformer.multi_token_prediction import (
     MultiTokenPredictionBlockSubmodules,
     get_mtp_layer_offset,
@@ -71,6 +74,7 @@ def get_gpt_layer_with_transformer_engine_spec(
     moe_grouped_gemm: Optional[bool] = False,
     qk_layernorm: Optional[bool] = False,
     multi_latent_attention: Optional[bool] = False,
+    magi_attention: Optional[bool] = False,
     fp8: Optional[str] = None,  # pylint: disable=unused-arguments
     moe_use_legacy_grouped_gemm: Optional[bool] = False,
     qk_l2_norm: Optional[bool] = False,
@@ -139,16 +143,20 @@ def get_gpt_layer_with_transformer_engine_spec(
             ),
         )
     else:
-
         # TENorm significantly harms convergence when used
         # for QKLayerNorm if TE Version < 1.9;
         # we instead use the Apex implementation.
+
+        if magi_attention:
+            attention_module = MagiAttention
+        else:
+            attention_module = SelfAttention
         qk_norm = TENorm if is_te_min_version("1.9.0") else FusedLayerNorm
         return ModuleSpec(
             module=TransformerLayer,
             submodules=TransformerLayerSubmodules(
                 self_attention=ModuleSpec(
-                    module=SelfAttention,
+                    module=attention_module,
                     params={"attn_mask_type": AttnMaskType.causal},
                     submodules=SelfAttentionSubmodules(
                         linear_qkv=TELayerNormColumnParallelLinear,
@@ -175,6 +183,7 @@ def get_gpt_layer_local_spec(
     moe_grouped_gemm: Optional[bool] = False,
     qk_layernorm: Optional[bool] = False,
     multi_latent_attention: Optional[bool] = False,
+    magi_attention: Optional[bool] = False,
     fp8: Optional[str] = None,  # pylint: disable=unused-arguments
     moe_use_legacy_grouped_gemm: Optional[bool] = False,
     normalization: Optional[str] = None,
@@ -242,12 +251,16 @@ def get_gpt_layer_local_spec(
             ),
         )
     else:
+        if magi_attention:
+            attention_module = MagiAttention
+        else:
+            attention_module = SelfAttention
         return ModuleSpec(
             module=TransformerLayer,
             submodules=TransformerLayerSubmodules(
                 input_layernorm=LNImpl,
                 self_attention=ModuleSpec(
-                    module=SelfAttention,
+                    module=attention_module,
                     params={"attn_mask_type": AttnMaskType.causal},
                     submodules=SelfAttentionSubmodules(
                         linear_qkv=ColumnParallelLinear,
@@ -338,7 +351,6 @@ def get_gpt_decoder_block_spec(
         layer_norm_impl = TENorm
     else:
         layer_norm_impl = LNImpl
-
     # Layer specs.
     dense_layer_spec = (
         get_gpt_layer_with_transformer_engine_spec(
@@ -346,6 +358,7 @@ def get_gpt_decoder_block_spec(
             moe_grouped_gemm=False,
             qk_layernorm=config.qk_layernorm,
             multi_latent_attention=config.multi_latent_attention,
+            magi_attention=config.magi_attention,
             moe_use_legacy_grouped_gemm=config.moe_use_legacy_grouped_gemm,
             qk_l2_norm=qk_l2_norm,
         )
@@ -355,6 +368,7 @@ def get_gpt_decoder_block_spec(
             moe_grouped_gemm=False,
             qk_layernorm=config.qk_layernorm,
             multi_latent_attention=config.multi_latent_attention,
+            magi_attention=config.magi_attention,
             moe_use_legacy_grouped_gemm=config.moe_use_legacy_grouped_gemm,
             normalization=normalization,
             qk_l2_norm=qk_l2_norm,
@@ -366,6 +380,7 @@ def get_gpt_decoder_block_spec(
             moe_grouped_gemm=config.moe_grouped_gemm,
             qk_layernorm=config.qk_layernorm,
             multi_latent_attention=config.multi_latent_attention,
+            magi_attention=config.magi_attention,
             moe_use_legacy_grouped_gemm=config.moe_use_legacy_grouped_gemm,
             qk_l2_norm=qk_l2_norm,
         )
@@ -375,6 +390,7 @@ def get_gpt_decoder_block_spec(
             moe_grouped_gemm=config.moe_grouped_gemm,
             qk_layernorm=config.qk_layernorm,
             multi_latent_attention=config.multi_latent_attention,
+            magi_attention=config.magi_attention,
             moe_use_legacy_grouped_gemm=config.moe_use_legacy_grouped_gemm,
             normalization=normalization,
             qk_l2_norm=qk_l2_norm,

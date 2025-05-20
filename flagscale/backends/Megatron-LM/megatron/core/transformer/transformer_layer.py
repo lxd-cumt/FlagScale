@@ -27,6 +27,7 @@ from megatron.core.utils import (
     log_single_rank,
     make_viewless_tensor,
 )
+from megatron.core.transformer.magi_attention import MagiAttentionSlices
 
 logger = logging.getLogger(__name__)
 
@@ -442,6 +443,7 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         self,
         hidden_states: Tensor,
         attention_mask: Optional[Tensor] = None,
+        magi_attention_slices: MagiAttentionSlices = None,
         context: Optional[Tensor] = None,
         context_mask: Optional[Tensor] = None,
         rotary_pos_emb: Optional[Tensor] = None,
@@ -494,17 +496,33 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             input_layernorm_output = self.input_layernorm(hidden_states)
 
         # Self attention.
-        attention_output_with_bias = self.self_attention(
-            input_layernorm_output,
-            attention_mask=attention_mask,
-            inference_context=inference_context,
-            rotary_pos_emb=rotary_pos_emb,
-            rotary_pos_cos=rotary_pos_cos,
-            rotary_pos_sin=rotary_pos_sin,
-            attention_bias=attention_bias,
-            packed_seq_params=packed_seq_params,
-            sequence_len_offset=sequence_len_offset,
-        )
+        if self.config.magi_attention:
+            attention_output_with_bias = self.self_attention(
+                input_layernorm_output,
+                attention_mask=attention_mask,
+                magi_attention_slices=magi_attention_slices,
+                inference_context=inference_context,
+                rotary_pos_emb=rotary_pos_emb,
+                rotary_pos_cos=rotary_pos_cos,
+                rotary_pos_sin=rotary_pos_sin,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                sequence_len_offset=sequence_len_offset,
+            )
+        else:
+            # print(f"in transformer layer, use self attention")
+            attention_output_with_bias = self.self_attention(
+                input_layernorm_output,
+                attention_mask=attention_mask,
+                inference_context=inference_context,
+                rotary_pos_emb=rotary_pos_emb,
+                rotary_pos_cos=rotary_pos_cos,
+                rotary_pos_sin=rotary_pos_sin,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                sequence_len_offset=sequence_len_offset,
+            )
+
 
         if self.recompute_input_layernorm:
             # discard the output of the input layernorm and register the recompute

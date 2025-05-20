@@ -20,7 +20,7 @@ from megatron.core.models.retro.utils import (
     get_gpt_data_dir as get_retro_data_dir,
 )
 from megatron.core.rerun_state_machine import RerunStateMachine
-from megatron.core.transformer import MLATransformerConfig, TransformerConfig
+from megatron.core.transformer import MLATransformerConfig, TransformerConfig, MagiAttentionTransformerConfig
 from megatron.core.transformer.enums import AttnBackend
 from megatron.core.transformer.heterogeneous.heterogeneous_config import (
     HeterogeneousTransformerConfig,
@@ -56,6 +56,7 @@ def add_megatron_arguments(parser: argparse.ArgumentParser):
     parser = _add_mtp_args(parser)
     parser = _add_moe_args(parser)
     parser = _add_mla_args(parser)
+    parser = _add_magi_attention_args(parser)
     parser = _add_heterogeneous_args(parser)
     parser = _add_logging_args(parser)
     parser = _add_straggler_detector_args(parser)
@@ -1064,6 +1065,9 @@ def core_transformer_config_from_args(args, config_class=None):
     if args.multi_latent_attention:
         config_class = MLATransformerConfig
     
+    if args.magi_attention:
+        config_class = MagiAttentionTransformerConfig
+    
     if args.heterogeneous_layers_config_path is not None:
         assert not args.multi_latent_attention, "Multi latent attention with heterogeneous layers is not supported."
         config_class = HeterogeneousTransformerConfig
@@ -1900,6 +1904,8 @@ def _add_training_args(parser):
                        choices=['nccl', 'ucc'],
                        help='Select a communicator backend for pipeline parallel communication. '
                        'If None, the default backend will be used.')
+    group.add_argument('--magi-attention', action='store_true',
+                       help='Use magi-attention for model.')
 
     return parser
 
@@ -2778,6 +2784,40 @@ def _add_mla_args(parser):
     group.add_argument('--mscale-all-dim', type=float, default=1.0,
                        help="Mscale all dimensions for YaRN RoPE in multi-latent attention.")
 
+    return parser
+
+def _add_magi_attention_args(parser):
+    group = parser.add_argument_group(title="magi_attention")
+    group.add_argument('--magi-dispatch-alg', type=str,
+                       choices=['lower_bound', 'dynamic_programming', 'binary_search', 'min_heap', 'topp_heap', 'backtracing_pruning'],
+                       default='min_heap',
+                       help='Determines dispatch algorithm for magi attention. The default is "min_heap".')
+    group.add_argument('--magi-overlap-enable', action='store_false',
+                       help='Enable overlap of magi attention.')
+    group.add_argument('--magi-overlap-mode', type=str,
+                        default='static',
+                       choices=['static', 'dynamic'],
+                       help="Overlap mode of magi attention.")
+    group.add_argument('--magi-degree', type=int, default=1,
+                       help="Degree of magi attention.")
+    group.add_argument('--magi-dynamic-max-degree', type=int, default=None,
+                       help="Dynamic max degree of magi attention.")
+    group.add_argument('--magi-min-chunk-size', type=int, default=512,
+                       help="Min chunk size of magi attention.")
+    group.add_argument('--magi-max-num-chunks', type=int, default=64,
+                       help="Max num chunks of magi attention.")
+    group.add_argument('--magi-overlap-alg', type=str,
+                       choices=['uniform', 'greedy'],
+                       default='uniform',
+                       help='Determines overlap algorithm for magi attention. The default is "uniform".')
+    group.add_argument('--magi-calc-cost-factor', type=float, default=1.0,
+                       help="Calc cost factor of magi attention.")
+    group.add_argument('--magi-comm-cost-factor', type=float, default=1.0,
+                       help="Comm cost factor of mati attention.")
+    group.add_argument('--magi-high-bandwidth-domain-size', type=int, default=1,
+                       help="High bandwidth with domain size.")
+    group.add_argument('--magi-deterministic', action='store_true',
+                       help='Enable deterministic mode of magi attention.')
     return parser
 
 def _add_heterogeneous_args(parser):
