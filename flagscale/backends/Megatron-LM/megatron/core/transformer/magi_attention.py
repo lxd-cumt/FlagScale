@@ -38,8 +38,8 @@ from magi_attention.common.ranges import AttnRanges
 from magi_attention.common.enum import AttnMaskType as MagiAttnMaskType
 from magi_attention.common.enum import AttnOverlapMode as MagiAttnOverlapMode
 from magi_attention.common.enum import AttnRole as MagiAttnRole
-from magi_attention.api.functools import compute_pad_size, squash_batch_dim
-from magi_attention.api.magi_attn_interface import magi_attn_flex_dispatch, calc_attn, undispatch, get_position_ids
+from magi_attention.api.functools import compute_pad_size, squash_batch_dim, pad_at_dim, unpad_at_dim
+from magi_attention.api.magi_attn_interface import magi_attn_flex_dispatch, calc_attn, undispatch, get_position_ids, magi_attn_flex_key
 from magi_attention.config import DistAttnConfig
 from magi_attention.meta.solver.dispatch_solver import (
     DispatchConfig,
@@ -107,6 +107,75 @@ except ImportError:
     SplitAlongDim = None
 
 
+def get_ranges_on_this_cp_rank(
+    q_ranges,
+    k_ranges,
+    magi_attn_mask_type,
+    cp_rank,
+    seq_len,# total_seq_len / cp_size
+):
+    global_seq_start = cp_rank * seq_len
+    global_seq_end = (cp_rank+1) * seq_len
+    cur_q_ranges = []
+    cur_k_ranges = []
+    cur_magi_attn_mask_type = []
+
+    for idx, q_range in enumerate(q_ranges):
+        start = max(q_range[0], global_seq_start) - cp_rank*seq_len
+        end = min(q_range[1], global_seq_end) - cp_rank*seq_len
+        if start < end:
+            cur_q_ranges.append([start, end])
+            cur_k_ranges.append(k_ranges[idx])
+            cur_magi_attn_mask_type.append(magi_attn_mask_type[idx])
+
+    return cur_q_ranges, cur_k_ranges, cur_magi_attn_mask_type
+
+
+def get_global_k(
+    k,
+    seq_len, # total_seq_len / cp_size
+    bsz,
+    pad_size,
+    batch_id,
+):
+    cp_rank = k // seq_len
+    offset = k % seq_len
+    global_k = cp_rank * (seq_len*bsz+pad_size) + batch_id * seq_len + offset
+    return global_k
+
+def split_into_intervals(lst):
+    if not lst:
+        return []
+    result = []
+    current_start = lst[0]
+    current_end = lst[0] + 1
+
+    for i in range(1, len(lst)):
+        if lst[i] == lst[i-1] + 1:
+            current_end = lst[i] + 1
+        else:
+            result.append([current_start, current_end])
+            current_start = lst[i]
+            current_end = lst[i] + 1
+
+    result.append([current_start, current_end])
+    return result
+
+def get_global_k_list(
+    k_range_start,
+    k_range_end,
+    seq_len, # total_seq_len / cp_size
+    bsz,
+    pad_size,
+    batch_id,
+):
+    k_list = []
+    for k in range(k_range_start, k_range_end):
+        global_k = get_global_k(k, seq_len, bsz, pad_size, batch_id)
+        k_list.append(global_k)
+    
+    return split_into_intervals(k_list)
+
 class MagiAttentionSlices:
     def __init__(
         self,
@@ -115,24 +184,90 @@ class MagiAttentionSlices:
         magi_attn_mask_type: List[Union[MagiAttnMaskType]] = None,
         seq_length: int = None,
     ):
+        self.seq_length = seq_length
+        
         if q_ranges is not None and k_ranges is not None and magi_attn_mask_type is not None:
-            self.q_ranges = AttnRanges.from_ranges(q_ranges)
-            self.k_ranges = AttnRanges.from_ranges(k_ranges)
+            assert q_ranges[0][0] == 0 and q_ranges[-1][1] == self.seq_length, "invalid attention mask"
+            self.q_ranges = q_ranges
+            self.k_ranges = k_ranges
             self.magi_attn_mask_type = magi_attn_mask_type
         else:
-            self.q_ranges = AttnRanges.from_ranges(
-                [[0, seq_length]],
-            )
-            self.k_ranges = AttnRanges.from_ranges(
-                [[0, seq_length]],
-            )
+            self.q_ranges = [[0, seq_length]]
+            self.k_ranges = [[0, seq_length]]
             self.magi_attn_mask_type = [MagiAttnMaskType.CAUSAL]
 
 
-class MagiAttention(Attention):
-    """
-    """
+    def update_ranges(
+            self,
+            seq_len, # total_seq_len / cp_size
+            bsz,
+            cp_size,
+            pad_size,
+        ):
 
+            global_q_ranges = []
+            global_k_ranges = []
+            global_magi_attn_mask_type = []
+
+            global_q_range_offset = 0
+            for cp_rank in range(cp_size):
+                # get mask on this cp rank
+                cur_q_ranges, cur_k_ranges, cur_magi_attn_mask_type = get_ranges_on_this_cp_rank(
+                        self.q_ranges,
+                        self.k_ranges,
+                        self.magi_attn_mask_type,
+                        cp_rank,
+                        seq_len,
+                    )
+                assert len(cur_q_ranges) == len(cur_k_ranges) and len(cur_q_ranges) == len(cur_magi_attn_mask_type), "invalid ranges after slicing cp"
+
+                new_q_ranges = []
+                new_k_ranges = []
+                new_magi_attn_mask_type = []
+                # expand mask to more batch
+                num_valid_range_each_batch = len(cur_q_ranges)
+                for batch_id in range(0, bsz):
+                    for range_id in range(num_valid_range_each_batch):
+                        q_range_start = cur_q_ranges[range_id][0]
+                        q_range_end = cur_q_ranges[range_id][1]
+                        k_range_start = cur_k_ranges[range_id][0]
+                        k_range_end = cur_k_ranges[range_id][1]
+                        attn_mask_type = cur_magi_attn_mask_type[range_id]
+
+                        k_ranges_list = get_global_k_list(k_range_start, k_range_end, seq_len, bsz, pad_size, batch_id)
+                        for k_id in range(len(k_ranges_list)):
+                            new_q_ranges.append([q_range_start+batch_id*seq_len, q_range_end+batch_id*seq_len])
+                            new_k_ranges.append(k_ranges_list[k_id])
+                            new_magi_attn_mask_type.append(attn_mask_type)
+                assert len(new_q_ranges) == len(new_k_ranges) and len(new_q_ranges) == len(new_magi_attn_mask_type), "invalid ranges after expanding batch"
+
+                # add padding mask
+                padding_start = seq_len * bsz
+                padding_end = seq_len * bsz + pad_size
+                new_q_ranges.append([padding_start, padding_end])
+                new_k_ranges.append([0, 0])
+                new_magi_attn_mask_type.append(MagiAttnMaskType.FULL)
+
+                # append ranges of this cp rank to global ranges
+                for range_id, new_q_range in enumerate(new_q_ranges):
+                    q_range_start = new_q_range[0] + global_q_range_offset
+                    q_range_end = new_q_range[1] + global_q_range_offset
+                    k_range = new_k_ranges[range_id]
+                    attn_mask_type = new_magi_attn_mask_type[range_id]
+                    global_q_ranges.append([q_range_start, q_range_end])
+                    global_k_ranges.append(k_range)
+                    global_magi_attn_mask_type.append(attn_mask_type)
+
+                assert len(global_q_ranges) == len(global_k_ranges) and len(global_q_ranges) == len(global_magi_attn_mask_type), "invalid ranges of global ranges"
+                
+                # update q range offset for next cp rank
+                global_q_range_offset += (seq_len*bsz+pad_size)
+
+            updated_ranges = tuple([global_q_ranges, global_k_ranges, global_magi_attn_mask_type])
+            return updated_ranges
+
+
+class MagiAttention(Attention):
     def __init__(
         self,
         config: MagiAttentionTransformerConfig,
@@ -142,7 +277,6 @@ class MagiAttention(Attention):
         cp_comm_type: str = None,
         model_comm_pgs: ModelCommProcessGroups = None,
     ):
-        
         super().__init__(
             config=config,
             submodules=submodules,
@@ -152,6 +286,7 @@ class MagiAttention(Attention):
             cp_comm_type=cp_comm_type,
             model_comm_pgs=model_comm_pgs,
         )
+
         self.config = config
 
         self.magi_dist_attn_config = DistAttnConfig(
@@ -229,14 +364,18 @@ class MagiAttention(Attention):
         else:
             self.k_layernorm = None
 
+        self.updated_ranges_cache = None
+        self.position_ids_cache = None
+
+
     def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
         """
         Derives `query`, `key` and `value` tensors from `hidden_states`.
         """
-        # Attention heads [sq*b+pad, h] --> [sq*b+pad, ng * (np/ng + 2) * hn)]
+        # Attention heads [b*s/cp+pad, h] --> [b*s/cp+pad, ng * (np/ng + 2) * hn)]
         mixed_qkv, _ = self.linear_qkv(hidden_states)
 
-        # [sq*b+pad, hp] --> [sq*b+pad, ng, (np/ng + 2) * hn]
+        # [b*s/cp+pad, hp] --> [b*s/cp+pad, ng, (np/ng + 2) * hn]
         new_tensor_shape = mixed_qkv.size()[:-1] + (
             self.num_query_groups_per_partition,
             (
@@ -258,23 +397,23 @@ class MagiAttention(Attention):
 
         if SplitAlongDim is not None:
 
-            # [sq*b+pad, ng, (np/ng + 2) * hn]
-            # --> [sq*b+pad, ng, np/ng * hn], [sq*b+pad, ng, hn], [sq*b+pad, ng, hn]
+            # [b*s/cp+pad, ng, (np/ng + 2) * hn]
+            # --> [b*s/cp+pad, ng, np/ng * hn], [b*s/cp+pad, ng, hn], [b*s/cp+pad, ng, hn]
             (query, key, value) = SplitAlongDim(mixed_qkv, 2, split_arg_list)
         else:
 
-            # [sq*b+pad, ng, (np/ng + 2) * hn]
-            # --> [sq*b+pad, ng, np/ng * hn], [sq*b+pad, ng, hn], [sq*b+pad, ng, hn]
+            # [b*s/cp+pad, ng, (np/ng + 2) * hn]
+            # --> [b*s/cp+pad, ng, np/ng * hn], [b*s/cp+pad, ng, hn], [b*s/cp+pad, ng, hn]
             (query, key, value) = torch.split(mixed_qkv, split_arg_list, dim=2)
 
-        # [sq*b+pad, ng, np/ng * hn] -> [sq*b+pad, np, hn]
+        # [b*s/cp+pad, ng, np/ng * hn] -> [b*s/cp+pad, np, hn]
         query = query.reshape(query.size(0), -1, self.hidden_size_per_attention_head)
 
         if self.q_layernorm is not None:
             if not self.config.qk_layernorm_hidden_dim:
                 query = self.q_layernorm(query)
             else:
-                # [sq*b+pad, np, hn] -> [sq*b+pad, 1, np * hn]
+                # [b*s/cp+pad, np, hn] -> [b*s/cp+pad, 1, np * hn]
                 query_shape = list(query.shape)
                 query = query.reshape(query.size(0), 1, -1)
                 query = self.q_layernorm(query)
@@ -284,7 +423,7 @@ class MagiAttention(Attention):
             if not self.config.qk_layernorm_hidden_dim:
                 key = self.k_layernorm(key)
             else:
-                # [sq*b+pad, ng, hn] -> [sq*b+pad, 1, ng * hn]
+                # [b*s/cp+pad, ng, hn] -> [b*s/cp+pad, 1, ng * hn]
                 key_shape = list(key.shape)
                 key = key.reshape(key.size(0), 1, -1)
                 key = self.k_layernorm(key)
@@ -339,12 +478,11 @@ class MagiAttention(Attention):
         *,
         inference_params: Optional[BaseInferenceContext] = None,
     ) -> Tuple[Tensor, Tensor]:
-        """
-        """
-        seq_len, batch_size, hidden_size = hidden_states.shape
-        assert not self.config.sequence_parallel, "currently, magi attention in flagscale is not support with sequence parallel"
-        # assert self.config.context_parallel_size == 1, "currently, magi attention with context parallel is to be checked"
 
+        assert not self.config.sequence_parallel, "currently, magi attention in flagscale is not support with sequence parallel"
+        # here, seq_len = total_seq_len / cp_size
+        seq_len, batch_size, hidden_size = hidden_states.shape
+        
         # Check if we need to skip RoPE
         # no_rope is 0-indexed array and self.layer_number is 1-indexed
         no_rope = (
@@ -353,7 +491,7 @@ class MagiAttention(Attention):
         if no_rope:
             rotary_pos_emb = None
 
-        # hidden_states: [sq, b, h]
+        # hidden_states: [s/cp, b, h]
         if self.config.flash_decode and not self.training and inference_context is not None:
             rotary_pos_emb = None
         else:
@@ -368,39 +506,65 @@ class MagiAttention(Attention):
         # =====================
         # Get the query, key and value tensors based on the type of attention -
         # self or cross attn.
-        hidden_states = hidden_states.view(-1, hidden_states.shape[-1]) # from [s/tp, b, h] to [s/tp*b, h]
-        total_seqlen = hidden_states.shape[0]
-        cp_size = self.config.context_parallel_size
+        hidden_states = hidden_states.permute(1, 0, 2).contiguous() # [s/cp, b, h] -> [b, s/cp, h]
+        # squash batch dim
+        hidden_states = hidden_states.view(-1, hidden_states.shape[-1]) # [b, s/cp, h] -> [b*s/cp, h]
+
+        # # cal padding size
+        original_seqlen = batch_size * seq_len
         head_dim = self.config.kv_channels
-        pad_size, _ = compute_pad_size(total_seqlen, cp_size, head_dim)
-        # [s*b+padding, hidden_size]
-        local_hidden_states, magi_attn_runtime_key = magi_attn_flex_dispatch( # local_hidden_states with shape (total_seqlen_q + pad_size) / cp_size, h)
-                hidden_states,
-                q_ranges=magi_attention_slices.q_ranges,
-                k_ranges=magi_attention_slices.k_ranges,
-                attn_mask_type=magi_attention_slices.magi_attn_mask_type,
+        pad_size, _ = compute_pad_size(original_seqlen, 1, head_dim)
+        cp_size = self.config.context_parallel_size
+        total_seqlen = (original_seqlen + pad_size) * cp_size
+
+        # # padding hidden_states
+        new_hidden_states = pad_at_dim(hidden_states, 0, pad_size)
+        
+        # # update q_ranges, k_ranges, attn_mask, fake here            
+        if self.updated_ranges_cache is None:
+            update_ranges = magi_attention_slices.update_ranges(seq_len, batch_size, cp_size, pad_size)
+            self.updated_ranges_cache = update_ranges
+        q_ranges = self.updated_ranges_cache[0]
+        k_ranges = self.updated_ranges_cache[1]
+        magi_attn_mask_type = self.updated_ranges_cache[2]
+        print(f"new q ranges is {q_ranges}")
+        print(f"new k ranges is {k_ranges}")
+        print(f"new magi attn mask is {magi_attn_mask_type}")
+
+        cur_pad_size, _ = compute_pad_size(total_seqlen, cp_size, head_dim)
+        assert cur_pad_size == 0, "invalid pad size"
+
+        # [b*s/cp+pad, h]
+        local_hidden_states, magi_attn_runtime_key = magi_attn_flex_key(
+                new_hidden_states,
+                q_ranges=AttnRanges.from_ranges(q_ranges),
+                k_ranges=AttnRanges.from_ranges(k_ranges),
+                attn_mask_type=magi_attn_mask_type,
                 total_seqlen_q=total_seqlen,
                 total_seqlen_k=total_seqlen,
                 head_dim=head_dim,
-                pad_size=pad_size,
+                pad_size=cur_pad_size,
                 cp_group=get_context_parallel_group(),
                 is_same_source=True,
                 is_q_permutable=True,
                 is_k_permutable=True,
                 dist_attn_config=self.magi_dist_attn_config,
           )
-        # local_query: [s*b+padding, nh, hd]
+        # local_query: [b*s/cp+pad, nh, hd]
         local_query, local_key, local_value = self.get_query_key_value_tensors(local_hidden_states, key_value_states)
-        
+
         # ================================================
         # relative positional embedding (rotary embedding)
         # ================================================
-        position_ids = get_position_ids(magi_attn_runtime_key)
-        print(f"in MagiAttention, position_ids is {position_ids}, shape is {position_ids.shape}")
+        if self.position_ids_cache is None:
+            position_ids = torch.cat(
+                (torch.arange(seq_len).repeat(batch_size),
+                torch.full((pad_size,), seq_len-1),)
+            )
+            self.position_ids_cache = position_ids
+        
         if rotary_pos_emb is not None and not self.config.flash_decode:
             q_pos_emb, k_pos_emb = rotary_pos_emb
-            print(f"in MagiAttention, q_pos_emb is {q_pos_emb}, shape is {q_pos_emb.shape}")
-            print(f"in MagiAttention, k_pos_emb is {k_pos_emb}, shape is {k_pos_emb.shape}")
             if packed_seq_params is not None:
                 if packed_seq_params.cu_seqlens_q_padded is not None:
                     cu_seqlens_q = packed_seq_params.cu_seqlens_q_padded
@@ -422,7 +586,7 @@ class MagiAttention(Attention):
                         config=self.config,
                         cu_seqlens=cu_seqlens_q,
                         cp_group=self.model_comm_pgs.cp,
-                        position_ids=position_ids,
+                        position_ids=self.position_ids_cache,
                     )
                 else:
                     query = inference_context.apply_rotary_emb_query(
@@ -435,7 +599,7 @@ class MagiAttention(Attention):
                     config=self.config,
                     cu_seqlens=cu_seqlens_kv,
                     cp_group=self.model_comm_pgs.cp,
-                    position_ids=position_ids,
+                    position_ids=self.position_ids_cache,
                 )
 
             # TODO, can apply positional embedding to value_layer so it has
@@ -460,9 +624,9 @@ class MagiAttention(Attention):
                 local_value,
                 magi_attn_runtime_key,
             )
-        core_attn_out = undispatch(core_attn_out, magi_attn_runtime_key)
-        core_attn_out = core_attn_out.view(seq_len, batch_size, -1)
 
+        core_attn_out = unpad_at_dim(core_attn_out, 0, pad_size).contiguous() # [b*s/cp+pad, h] -> [b*s/cp, h]
+        core_attn_out = core_attn_out.view(batch_size, seq_len, -1).permute(1, 0, 2) # [b*s/cp, h] -> [b, s/cp, h] -> [s/cp, b, h]
         
         # =================
         # Output. [sq, b, h]

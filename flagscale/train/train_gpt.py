@@ -290,6 +290,7 @@ def forward_step(data_iterator, model: GPTModel):
             q_ranges = [[0, seq_length // 2], [seq_length // 2, seq_length]],
             k_ranges = [[0, seq_length // 2], [seq_length // 2, seq_length]],
             magi_attn_mask_type = [MagiAttnMaskType.CAUSAL, MagiAttnMaskType.FULL],
+            seq_length=args.seq_length,
         )
 
 

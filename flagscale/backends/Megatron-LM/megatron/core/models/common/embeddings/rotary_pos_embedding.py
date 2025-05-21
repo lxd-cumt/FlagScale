@@ -92,6 +92,7 @@ class RotaryEmbedding(nn.Module):
 
         self.use_magi_attention = use_magi_attention
 
+
     def _apply_scaling(
         self,
         freqs,
@@ -177,10 +178,10 @@ class RotaryEmbedding(nn.Module):
             )
         # emb [seq_length, .., dim]
         emb = emb[:, None, None, :]
-        if self.cp_group is not None and self.cp_group.size() > 1 and not packed_seq and not self.use_magi_attention:
+        if self.cp_group is not None and self.cp_group.size() > 1 and not packed_seq:
             # slice rotary_pos_emb along sequence dimension and select the parition of the current
             # CP rank
-            emb = get_pos_emb_on_this_cp_rank(emb, 0, self.cp_group)
+            emb = get_pos_emb_on_this_cp_rank(emb, 0, self.cp_group, self.use_magi_attention)
         return emb
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):

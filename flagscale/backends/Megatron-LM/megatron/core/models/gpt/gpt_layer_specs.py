@@ -143,6 +143,7 @@ def get_gpt_layer_with_transformer_engine_spec(
             ),
         )
     else:
+
         # TENorm significantly harms convergence when used
         # for QKLayerNorm if TE Version < 1.9;
         # we instead use the Apex implementation.
@@ -351,6 +352,7 @@ def get_gpt_decoder_block_spec(
         layer_norm_impl = TENorm
     else:
         layer_norm_impl = LNImpl
+
     # Layer specs.
     dense_layer_spec = (
         get_gpt_layer_with_transformer_engine_spec(
