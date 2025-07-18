@@ -3,7 +3,8 @@ defaults:
   - train: 14b
 
 experiment:
-  exp_name: Qwen3-Test
+  # exp_name: Qwen3-30b-a3b-Train
+  exp_name: Qwen3-32b-Train
   seed: 42
   save_steps: 10000
   load: None

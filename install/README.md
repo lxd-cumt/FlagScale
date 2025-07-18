@@ -1,11 +1,17 @@
 # Install the environment for train.
 
 ```bash
-./install-requirements.sh --env train
+./install/install-requirements.sh --env train
 ```
 
 # Install the environment for inference.
 
 ```bash
-./install-requirements.sh --env inference
+./install/install-requirements.sh --env inference --llama-cpp-backend cuda
+```
+
+# Install the environment for RL.
+
+```bash
+./install/install-requirements.sh --env RL
 ```
