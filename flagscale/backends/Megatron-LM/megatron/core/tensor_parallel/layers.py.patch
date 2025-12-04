@@ -1,5 +1,5 @@
 diff --git a/megatron/core/tensor_parallel/layers.py b/megatron/core/tensor_parallel/layers.py
-index 5c6f34b70..ae07dc556 100644
+index 5c6f34b70..5c943759a 100644
 --- a/megatron/core/tensor_parallel/layers.py
 +++ b/megatron/core/tensor_parallel/layers.py
 @@ -448,6 +448,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
@@ -82,15 +82,7 @@ index 5c6f34b70..ae07dc556 100644
      ]
  
      if not linear_with_grad_accumulation_and_async_allreduce.warned:
-@@ -807,6 +818,7 @@ class ColumnParallelLinear(torch.nn.Module):
-         tp_group: Optional[torch.distributed.ProcessGroup] = None,
-     ):
-         super(ColumnParallelLinear, self).__init__()
-+        print(f"[ColumnParallelLinear], {config.transformer_impl=}")
- 
-         # Keep input parameters
-         self.input_size = input_size
-@@ -938,6 +950,8 @@ class ColumnParallelLinear(torch.nn.Module):
+@@ -938,6 +949,8 @@ class ColumnParallelLinear(torch.nn.Module):
          if not weight.requires_grad:
              return linear_with_frozen_weight(input, weight, *args, **kwargs)
          else:
@@ -99,7 +91,7 @@ index 5c6f34b70..ae07dc556 100644
              return linear_with_grad_accumulation_and_async_allreduce(input, weight, *args, **kwargs)
  
      def forward(
-@@ -1298,3 +1312,4 @@ class RowParallelLinear(torch.nn.Module):
+@@ -1298,3 +1311,4 @@ class RowParallelLinear(torch.nn.Module):
              f"{type(self).__name__}(in_features={self.input_size}, "
              f"out_features={self.output_size}, bias={use_bias}, TP={tp})"
          )
