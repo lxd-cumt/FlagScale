@@ -33,7 +33,6 @@ model:
   transformer_impl: transformer_engine
   use_transformer_engine_fl: true
   flag_gems_log_path: xxx
-  flag_gems_unused: ['index_put', 'index_put_', 'copy_'] 
   num_layers: 32
   hidden_size: 5120
   ffn_hidden_size: 25600
