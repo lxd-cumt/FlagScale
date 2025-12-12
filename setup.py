@@ -258,6 +258,9 @@ class FlagScaleBuildPy(_build_py):
             src = os.path.join(main_path, "flagscale", "backends", backend)
             print(f"[build_py] Device {self.device} initializing the {backend} backend.")
             force = os.getenv("FLAGSCALE_FORCE_INIT", False)
+            
+            # Skip unpatch for Megatron-LM but keep packaging logic below.
+            fs_extension = True if backend != "Megatron-LM" else False
             unpatch(
                 main_path,
                 src,
@@ -265,8 +268,9 @@ class FlagScaleBuildPy(_build_py):
                 backend,
                 force=force,
                 backend_commit=backend_commit,
-                fs_extension=True,
+                fs_extension=fs_extension,
             )
+        
             # ===== Copy for packaging =====
             if backend == "Megatron-LM":
                 rel_src = os.path.join("third_party", backend, "megatron")

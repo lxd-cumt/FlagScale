@@ -514,8 +514,8 @@ class ProcessMesh:
         return self._ddp_config
 
     def get_optimizer_config(self):
-        return self._optimizer_config
-
+        return (self._optimizer_config, self._optimizer_config_overrides)
+    
     def logical_coords_to_physical_ranks(self, coords, is_expert=False):
         def _prefix_product(a: List[int], init=1) -> List[int]:
             r = [init]
@@ -583,6 +583,7 @@ class ParallelContext:
         self._tranformer_config = None
         self._ddp_config = None
         self._optimizer_config = None
+        self._optimizer_config_overrides = None
         self._dataset_config = None
 
         self.build_config()
@@ -1640,27 +1641,10 @@ class ParallelContext:
             return ddp_config
 
         def _build_optimzer_config(args):
-            from megatron.core.optimizer import OptimizerConfig, AdamOptimizerConfig, SGDOptimizerConfig
             # Use specific optimizer config class based on optimizer type, matching Megatron-LM-FL behavior
-            if args.optimizer == 'adam':
-                kwargs = {}
-                for f in dataclasses.fields(AdamOptimizerConfig):
-                    if hasattr(args, f.name):
-                        kwargs[f.name] = getattr(args, f.name)
-                return AdamOptimizerConfig(**kwargs)
-            elif args.optimizer == 'sgd':
-                kwargs = {}
-                for f in dataclasses.fields(SGDOptimizerConfig):
-                    if hasattr(args, f.name):
-                        kwargs[f.name] = getattr(args, f.name)
-                return SGDOptimizerConfig(**kwargs)
-            else:
-                # Fallback to base OptimizerConfig for other optimizer types
-                kwargs = {}
-                for f in dataclasses.fields(OptimizerConfig):
-                    if hasattr(args, f.name):
-                        kwargs[f.name] = getattr(args, f.name)
-                return OptimizerConfig(**kwargs)
+            from megatron.training.training import get_megatron_optimizer_config
+            config, config_overrides = get_megatron_optimizer_config(args)
+            return config, config_overrides
 
         def _build_dataset_config(args):
             from megatron.core.datasets.gpt_dataset import GPTDatasetConfig
@@ -1719,7 +1703,7 @@ class ParallelContext:
         from megatron.training.arguments import core_transformer_config_from_args
         self._transformer_config = core_transformer_config_from_args(self._args)
         self._ddp_config = _build_ddp_config(self._args)
-        self._optimizer_config = _build_optimzer_config(self._args)
+        self._optimizer_config, self._optimizer_config_overrides = _build_optimzer_config(self._args)
         self._dataset_config = _build_dataset_config(self._args)
 
     def get_transformer_config(self):
@@ -1729,7 +1713,7 @@ class ParallelContext:
         return self._ddp_config
 
     def get_optimizer_config(self):
-        return self._optimizer_config
+        return (self._optimizer_config, self._optimizer_config_overrides)
 
     def get_dataset_config(self):
         return self._dataset_config

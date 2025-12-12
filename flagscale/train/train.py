@@ -75,7 +75,8 @@ except ImportError:
 
 from megatron.core.distributed import finalize_model_grads
 from megatron.core.enums import ModelType
-from megatron.core.optimizer import get_megatron_optimizer, OptimizerConfig, ParamKey, AdamOptimizerConfig, SGDOptimizerConfig
+from megatron.core.optimizer import get_megatron_optimizer
+from megatron.training.training import get_megatron_optimizer_config
 from megatron.core.rerun_state_machine import (
     get_rerun_state_machine,
     destroy_rerun_state_machine,
@@ -134,8 +135,8 @@ from flagscale.train.extra_valid import extra_evaluate_and_print_results
 from flagscale.train.extra_valid import build_extra_valid_data_iterators
 from flagscale.train.stablelm2_scheduler import StableLM2SchedulerConfig
 from flagscale.train.global_vars import get_parallel_context, get_spiky_loss_detector
-from flagscale.train.hetero.p2p_communication import get_device_type_for_comm
 from flagscale.train.theoretical_memory_usage import report_theoretical_memory as fs_report_theoretical_memory
+from flagscale.train.arguments import add_flagscale_args
 
 stimer = StragglerDetector()
 
@@ -787,8 +788,15 @@ def pretrain(
         store = torch.distributed.PrefixStore(str(iteration), store)
 
     # Initalize and get arguments, timers, and Tensorboard writer.
+    def _fs_extra_args_provider(parser):
+        # First add all FlagScale-specific options, then let the caller extend.
+        parser = add_flagscale_args(parser)
+        if extra_args_provider is not None:
+            parser = extra_args_provider(parser)
+        return parser
+
     initialize_megatron(
-        extra_args_provider=extra_args_provider,
+        extra_args_provider=_fs_extra_args_provider,
         args_defaults=args_defaults,
         get_embedding_ranks=get_embedding_ranks,
         get_position_embedding_ranks=get_position_embedding_ranks,
@@ -1398,48 +1406,15 @@ def setup_model_and_optimizer(
     config = None
     para_ctx = get_parallel_context()
     if para_ctx is not None:
-        config = para_ctx.get_optimizer_config()
+        config, config_overrides = para_ctx.get_optimizer_config()
 
     if config is None:
-        # Use specific optimizer config class based on optimizer type, matching Megatron-LM-FL behavior
-        if args.optimizer == 'adam':
-            kwargs = {}
-            for f in dataclasses.fields(AdamOptimizerConfig):
-                if hasattr(args, f.name):
-                    kwargs[f.name] = getattr(args, f.name)
-            config = AdamOptimizerConfig(**kwargs)
-        elif args.optimizer == 'sgd':
-            kwargs = {}
-            for f in dataclasses.fields(SGDOptimizerConfig):
-                if hasattr(args, f.name):
-                    kwargs[f.name] = getattr(args, f.name)
-            config = SGDOptimizerConfig(**kwargs)
-        else:
-            # Fallback to base OptimizerConfig for other optimizer types
-            kwargs = {}
-            for f in dataclasses.fields(OptimizerConfig):
-                if hasattr(args, f.name):
-                    kwargs[f.name] = getattr(args, f.name)
-            config = OptimizerConfig(**kwargs)
-    ########## FlagScale End ##########
+        config, config_overrides = get_megatron_optimizer_config(args)
     config.timers = timers
-    # Convert old interface parameters to new config_overrides format
-    # Note: New version of get_megatron_optimizer no longer supports
-    # no_wd_decay_cond, scale_lr_cond, lr_mult, default_skip_embedding_weight_decay
-    # These need to be converted to config_overrides if needed
-    config_overrides = None
-    if no_wd_decay_cond is not None or scale_lr_cond is not None or lr_mult != 1.0:
-        # TODO: Convert no_wd_decay_cond, scale_lr_cond, lr_mult to config_overrides
-        # This requires iterating through all parameters and matching them with ParamKey
-        # For now, we'll use None and let the default behavior handle it
-        # The new version handles weight decay automatically for bias and 1D parameters
-        import warnings
-        warnings.warn(
-            "no_wd_decay_cond, scale_lr_cond, and lr_mult parameters are not fully supported "
-            "in the new interface. They will be ignored. Please use config_overrides instead.",
-            UserWarning
-        )
 
+    # If the user is asking for a non-zero embedding init std, skip weight decay for embeddings
+    # to avoid embeddings from shrinking to zero as recommended in https://arxiv.org/abs/2312.16903
+    # default_skip_embedding_weight_decay=args.embedding_init_method_std is not None,
     optimizer = get_megatron_optimizer(
         config,
         model,

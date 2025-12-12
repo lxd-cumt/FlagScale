@@ -45,6 +45,7 @@ jobs:
       - set-env
     uses: ./.github/workflows/unit-tests-nvidia.yml
     strategy:
+      fail-fast: false
       matrix:
         subset:
           - data
@@ -74,6 +75,7 @@ jobs:
       - unit_tests_train_megatron
     uses: ./.github/workflows/unit-tests-nvidia.yml
     strategy:
+      fail-fast: false
       matrix:
         subset:
           - runner
