@@ -4,3 +4,4 @@ flask_restful
 tiktoken
 PyGithub
 aiohttp
+httpx

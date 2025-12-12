@@ -63,6 +63,7 @@ jobs:
             if [ "${{ inputs.task }}" = "llava_onevision" ]; then
               # python tools/patch/unpatch.py --backend Megatron-Energon
               git submodule update --init third_party/Megatron-LM
+              pip install httpx
               # PYTHONPATH=./:$PYTHONPATH pip install . --no-build-isolation --verbose --config-settings=device="gpu" --config-settings=backend="Megatron-Energon"
               cp -r third_party/Megatron-Energon/src/megatron/energon third_party/Megatron-LM/megatron
             fi
