@@ -6,3 +6,5 @@ PyGithub
 aiohttp
 httpx
 multi-storage-client
+boto3
+google-cloud-storage
