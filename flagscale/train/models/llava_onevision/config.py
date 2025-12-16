@@ -2,7 +2,7 @@
 """ Configuration for the vision tower, the llm tower and the projector. """
 import torch
 
-from megatron.training.activations import quick_gelu, squared_relu, fast_gelu
+from megatron.core.activations import quick_gelu, squared_relu, fast_gelu
 
 
 def get_language_model_config(config):
