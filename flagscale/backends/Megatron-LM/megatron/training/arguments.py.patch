@@ -1,5 +1,5 @@
 diff --git a/megatron/training/arguments.py b/megatron/training/arguments.py
-index 1120c7529..4698f13af 100644
+index 1120c7529..3facfbf30 100644
 --- a/megatron/training/arguments.py
 +++ b/megatron/training/arguments.py
 @@ -67,6 +67,7 @@ def add_megatron_arguments(parser: argparse.ArgumentParser):
@@ -344,8 +344,8 @@ index 1120c7529..4698f13af 100644
 +    if args.use_transformer_engine_fl:
 +        assert not args.tp_comm_overlap, "Do not support gemm/sp comm in TransformerEngine-FL now"
 +        args.distributed_backend = 'flagcx'
-+        if not args.disable_flag_gems_in_fl:
-+            args.use_flag_gems = True
++        if not args.disable_flag_gems_replace_torch:
++            args.use_flag_gems_replace_torch = True
 +
      # Print arguments.
      _print_args("arguments", args)
@@ -689,9 +689,9 @@ index 1120c7529..4698f13af 100644
 +    group = parser.add_argument_group(title="flag engine")
 +    group.add_argument('--use-transformer-engine-fl', action='store_true',
 +                       help='Enable transformer engine fl for training')
-+    group.add_argument('--disable-flag-gems-in-fl', action='store_true',
++    group.add_argument('--disable-flag-gems-replace-torch', action='store_true',
 +                       help='Disable flag gems for training when using te-fl')
-+    group.add_argument('--use-flag-gems', action='store_true',
++    group.add_argument('--use-flag-gems-replace-torch', action='store_true',
 +                       help='Enable flag gems for training')
 +    group.add_argument('--flag-gems-log-path', type=str, default=None,
 +                       help='Path of flag gems logging')
