@@ -1399,7 +1399,7 @@ def setup_model_and_optimizer(
     config = None
     para_ctx = get_parallel_context()
     if para_ctx is not None:
-        config = para_ctx.get_optimizer_config()
+        config, config_overrides = para_ctx.get_optimizer_config()
 
     if config is None:
         config, config_overrides = get_megatron_optimizer_config(args)
