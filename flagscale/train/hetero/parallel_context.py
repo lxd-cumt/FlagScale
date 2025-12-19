@@ -1713,7 +1713,7 @@ class ParallelContext:
         return self._ddp_config
 
     def get_optimizer_config(self):
-        return self._optimizer_config
+        return (self._optimizer_config, self._optimizer_config_overrides)
 
     def get_dataset_config(self):
         return self._dataset_config
