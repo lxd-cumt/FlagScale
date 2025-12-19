@@ -9,12 +9,5 @@ multi-storage-client
 boto3
 google-cloud-storage
 fastapi
-av
-datasets
-nvtx
-megatron-energon[av_decode]
-flashinfer-python
-onnxscript
 uvicorn
 griffe
-botocore==1.42.9
