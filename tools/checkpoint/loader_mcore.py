@@ -291,14 +291,6 @@ def _load_checkpoint(queue, args):
 
         models = [[] for _ in range(vp_size)]
         for rank_id in range(count):
-            tp_rank = rank_id % tp_size
-            ep_rank = rank_id // tp_size
-            mpu.set_tensor_model_parallel_rank(tp_rank)
-            mpu.set_expert_model_parallel_rank(ep_rank)
-            fake_tp_group = _ConverterFakeProcessGroup(rank=tp_rank, size=tp_size)
-            fake_ep_group = _ConverterFakeProcessGroup(rank=ep_rank, size=ep_size)
-            mpu._TENSOR_MODEL_PARALLEL_GROUP = fake_tp_group
-            mpu._EXPERT_MODEL_PARALLEL_GROUP = fake_ep_group
             if pp_size > 1 and vp_size > 1:
                 model_ = []
                 for vp_rank in range(vp_size):
