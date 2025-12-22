@@ -329,7 +329,6 @@ def save_checkpoint(queue, args):
     mpu._TENSOR_MODEL_PARALLEL_GROUP = fake_tp_group
     mpu._EXPERT_MODEL_PARALLEL_GROUP = fake_ep_group
     # For backward compatibility during local parallel states refactoring
-    fake_pp_group = _ConverterFakeProcessGroup(size=margs.pipeline_model_parallel_size)
     fake_cp_group = _ConverterFakeProcessGroup(size=margs.context_parallel_size)
     fake_dp_group = _ConverterFakeProcessGroup(size=margs.data_parallel_size)
     fake_etp_group = _ConverterFakeProcessGroup(size=margs.expert_tensor_parallel_size)
@@ -337,7 +336,6 @@ def save_checkpoint(queue, args):
     fake_edp_group = _ConverterFakeProcessGroup(size=edp_parallel_size)
     fake_etp_ep_group = _ConverterFakeProcessGroup(size=margs.expert_tensor_parallel_size*margs.expert_model_parallel_size)
     fake_tcp_group = _ConverterFakeProcessGroup(size=margs.tensor_model_parallel_size*margs.context_parallel_size)
-    mpu._PIPELINE_MODEL_PARALLEL_GROUP = fake_pp_group
     mpu._CONTEXT_PARALLEL_GROUP = fake_cp_group
     mpu._DATA_PARALLEL_GROUP = fake_dp_group
     mpu._EXPERT_TENSOR_PARALLEL_GROUP = fake_etp_group
@@ -346,6 +344,7 @@ def save_checkpoint(queue, args):
     mpu._TENSOR_AND_CONTEXT_PARALLEL_GROUP = fake_tcp_group
     mpu._DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
     mpu._INTRA_PARTIAL_DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
+    mpu._LAST_RANK_WHEN_USING_PIPELINE = pp_size - 1
 
 
     # fused kernel
@@ -371,6 +370,8 @@ def save_checkpoint(queue, args):
     # process embedding
     msg = queue_get("embeddings")
     mpu.set_pipeline_model_parallel_rank(0)
+    fake_pp_group = _ConverterFakeProcessGroup(rank=0, size=margs.pipeline_model_parallel_size)
+    mpu._PIPELINE_MODEL_PARALLEL_GROUP = fake_pp_group
     models = get_models(tp_size * ep_size, md.params_dtype)
     ckpt_plugin.set_embedding_ckpt(msg, models, md, margs)
     check_message(msg)
@@ -380,6 +381,8 @@ def save_checkpoint(queue, args):
     for pp_rank in range(pp_size):
 
         mpu.set_pipeline_model_parallel_rank(pp_rank)
+        fake_pp_group = _ConverterFakeProcessGroup(rank=pp_rank, size=margs.pipeline_model_parallel_size)
+        mpu._PIPELINE_MODEL_PARALLEL_GROUP = fake_pp_group
 
         if pp_rank > 0:
             models = get_models(tp_size * ep_size, md.params_dtype)
