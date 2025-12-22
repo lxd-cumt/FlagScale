@@ -238,6 +238,7 @@ def _load_checkpoint(queue, args):
     mpu._EXPERT_DATA_PARALLEL_GROUP = fake_edp_group
     mpu._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = fake_etp_ep_group
     mpu._TENSOR_AND_CONTEXT_PARALLEL_GROUP = fake_tcp_group
+    mpu._EXPERT_TENSOR_PARALLEL_GROUP = fake_tp_group
     mpu._DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
     mpu._INTRA_PARTIAL_DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
     mpu._LAST_RANK_WHEN_USING_PIPELINE = pp_size - 1
@@ -291,6 +292,10 @@ def _load_checkpoint(queue, args):
 
         models = [[] for _ in range(vp_size)]
         for rank_id in range(count):
+            tp_rank = rank_id % tp_size
+            ep_rank = rank_id // tp_size
+            mpu._TENSOR_MODEL_PARALLEL_GROUP = fake_tp_group
+            mpu._EXPERT_MODEL_PARALLEL_GROUP = fake_ep_group
             if pp_size > 1 and vp_size > 1:
                 model_ = []
                 for vp_rank in range(vp_size):
