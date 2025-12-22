@@ -301,7 +301,16 @@ def save_checkpoint(queue, args):
     use megatron args build object and init env
     """
 
-    # fake initializing distributed
+    # fake init torch distributed
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "29500"
+    torch.distributed.init_process_group(
+        backend="gloo",
+        rank=0,
+        world_size=1,
+    )
+
+    # fake initializing mpu process groups
     tp_size = margs.tensor_model_parallel_size
     pp_size = margs.pipeline_model_parallel_size
     ep_size = margs.expert_model_parallel_size
@@ -335,6 +344,9 @@ def save_checkpoint(queue, args):
     mpu._EXPERT_DATA_PARALLEL_GROUP = fake_edp_group
     mpu._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = fake_etp_ep_group
     mpu._TENSOR_AND_CONTEXT_PARALLEL_GROUP = fake_tcp_group
+    mpu._DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
+    mpu._INTRA_PARTIAL_DATA_PARALLEL_GROUP_WITH_CP = fake_dp_group
+
 
     # fused kernel
     fused_kernels.load(margs)
