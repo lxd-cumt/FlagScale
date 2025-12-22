@@ -421,6 +421,10 @@ def save_checkpoint(queue, args):
             ep_rank = tp_ep_rank // tp_size
             mpu.set_tensor_model_parallel_rank(tp_rank)
             mpu.set_expert_model_parallel_rank(ep_rank)
+            fake_tp_group = _ConverterFakeProcessGroup(rank=tp_rank, size=tp_size)
+            fake_ep_group = _ConverterFakeProcessGroup(rank=ep_rank, size=ep_size)
+            mpu._TENSOR_MODEL_PARALLEL_GROUP = fake_tp_group
+            mpu._EXPERT_MODEL_PARALLEL_GROUP = fake_ep_group
             checkpoint_name = get_checkpoint_name(margs.save, md.iteration)
             print(f"megtron model is saving to {checkpoint_name} ...")
             save_checkpoint(md.iteration, [model], None, None,
