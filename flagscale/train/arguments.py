@@ -631,8 +631,6 @@ def _add_logging_args(parser):
                        help='If set, write model to wandb.')
     group.add_argument('--wandb-log-model-interval', type=int, default=1000,
                        help='The interval to save the model to wandb.')
-    group.add_argument('--logging-level', type=int, default=None,
-                       help='Set default logging level')
     return parser
 
 
