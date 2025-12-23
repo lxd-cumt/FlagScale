@@ -137,6 +137,7 @@ from flagscale.train.stablelm2_scheduler import StableLM2SchedulerConfig
 from flagscale.train.global_vars import get_parallel_context, get_spiky_loss_detector
 from flagscale.train.hetero.p2p_communication import get_device_type_for_comm
 from flagscale.train.theoretical_memory_usage import report_theoretical_memory as fs_report_theoretical_memory
+from flagscale.train.arguments import add_flagscale_args
 
 stimer = StragglerDetector()
 
@@ -788,8 +789,15 @@ def pretrain(
         store = torch.distributed.PrefixStore(str(iteration), store)
 
     # Initalize and get arguments, timers, and Tensorboard writer.
+    def _fs_extra_args_provider(parser):
+        # First add all FlagScale-specific options, then let the caller extend.
+        parser = add_flagscale_args(parser)
+        if extra_args_provider is not None:
+            parser = extra_args_provider(parser)
+        return parser
+
     initialize_megatron(
-        extra_args_provider=extra_args_provider,
+        extra_args_provider=_fs_extra_args_provider,
         args_defaults=args_defaults,
         get_embedding_ranks=get_embedding_ranks,
         get_position_embedding_ranks=get_position_embedding_ranks,
