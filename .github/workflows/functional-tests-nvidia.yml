@@ -63,20 +63,12 @@ jobs:
             # python tools/patch/unpatch.py --backend Megatron-LM
             git submodule update --init third_party/Megatron-LM
             git submodule update --init third_party/Megatron-Energon/
-            cp -r third_party/Megatron-Energon/src/megatron/energon third_party/Megatron-LM/megatron
             pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-            # pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
-            # PYTHONPATH=./:$PYTHONPATH pip install . --no-build-isolation --verbose --config-settings=device="gpu" --config-settings=backend="Megatron-Energon"
-            cp -r third_party/Megatron-Energon/src/megatron/energon third_party/Megatron-LM/megatron
             if [ "${{ inputs.task }}" = "llava_onevision" ]; then
               # python tools/patch/unpatch.py --backend Megatron-Energon
               git submodule update --init third_party/Megatron-LM
               git submodule update --init third_party/Megatron-Energon/
-              cp -r third_party/Megatron-Energon/src/megatron/energon third_party/Megatron-LM/megatron
               pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-              # pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
-              # PYTHONPATH=./:$PYTHONPATH pip install . --no-build-isolation --verbose --config-settings=device="gpu" --config-settings=backend="Megatron-Energon"
-              cp -r third_party/Megatron-Energon/src/megatron/energon third_party/Megatron-LM/megatron
             fi
           elif [ "${{ inputs.type }}" = "inference" ] || [ "${{ inputs.type }}" = "serve" ]; then
             source /root/miniconda3/bin/activate flagscale-inference
