@@ -809,10 +809,20 @@ def pretrain(
 
     ###### FlagScale Begin ######
     args = get_args()
+    # enable flagos:triton / vendor:cuda / reference:torch backend for transformer engine fl
     if args.te_fl_prefer:
         os.environ['TE_FL_PREFER'] = args.te_fl_prefer
-        # TODO(lixianduo)
-        # how to enable flag_gems in flagscale/megatron/te_fl(other ops)
+    
+    # enable flag gems to replace torch ops for distributed training
+    # TODO(lixianduo): fix flag gems re-register error
+    if args.enable_gems:
+        try:
+            import flag_gems
+            flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
+        except ImportError:
+            raise RuntimeError("Failed to import 'flag_gems'. Please install flag_gems.")
+        except Exception as e:
+            raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
     ###### FlagScale End   ######
 
     if args.log_progress:

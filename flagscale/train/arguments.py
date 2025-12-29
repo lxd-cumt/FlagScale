@@ -437,9 +437,6 @@ class FSTrainArguments:
                 assert args.recompute_method is None and args.recompute_granularity is None and args.recompute_num_layers is None, "PEFT will raise comfilcts with recompute currently"
                 assert args.ckpt_format == 'torch', "PEFT is only tested with torch format checkpoint"
 
-        if args.te_fl_prefer == 'flagos':
-            args.distributed_backend = 'flagcx'
-
 
 def _add_mtp_args(parser):
     # add args for Multi-token Prediction module
@@ -780,10 +777,20 @@ def _add_regularization_args(parser):
     return parser
 
 
-def _add_transformer_engine_fl_args(parser):
+def _add_flagos_args(parser):
     group = parser.add_argument_group(title="transformer engine fl")
     group.add_argument('--te-fl-prefer', type=str, choices=['flagos', 'vendor', 'reference'], default='vendor',
                        help='Backend selection for transformer engine fl.')
+    group.add_argument('--enable-gems', action='store_true',
+                       help='Enable flag gems to replace torch ops for distributed training.')
+    group.add_argument('--flag-gems-log-path', type=str, default=None,
+                        help='Path of flag gems logging')
+    group.add_argument(
+        '--flag-gems-unused',
+        nargs='*',
+        default=None,
+        help='Flag Gems unused ops list'
+    )
     return parser
 
 
@@ -810,5 +817,5 @@ def add_flagscale_args(parser):
     parser = _add_auto_skip_spiky_loss(parser)
     parser = _add_peft_args(parser)
     parser = _add_regularization_args(parser)
-    parser = _add_transformer_engine_fl_args(parser)
+    parser = _add_flagos_args(parser)
     return parser

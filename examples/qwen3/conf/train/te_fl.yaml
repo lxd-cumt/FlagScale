@@ -31,7 +31,11 @@ system:
 
 model:
   transformer_impl: transformer_engine
-  te_fl_prefer: flagos
+  #### FlagOS-Related Arguments for unified computation backend and communication backend
+  te_fl_prefer: flagos # enable flagos:triton in transformer engine fl
+  enable_gems: True # enable flag gems to replace torch ops for distributed training
+  distributed_backend: flagcx # enable flagcx for distributed training
+  #### FlagOS-Related Arguments
   num_layers: 32
   hidden_size: 5120
   ffn_hidden_size: 25600
