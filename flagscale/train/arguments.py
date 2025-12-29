@@ -437,6 +437,8 @@ class FSTrainArguments:
                 assert args.recompute_method is None and args.recompute_granularity is None and args.recompute_num_layers is None, "PEFT will raise comfilcts with recompute currently"
                 assert args.ckpt_format == 'torch', "PEFT is only tested with torch format checkpoint"
 
+        if args.te_fl_prefer == 'flagos':
+            args.distributed_backend = 'flagcx'
 
 
 def _add_mtp_args(parser):
@@ -763,6 +765,13 @@ def _add_vision_args(parser):
     return parser
 
 
+def _add_transformer_engine_fl_args(parser):
+    group = parser.add_argument_group(title="transformer engine fl")
+    group.add_argument('--te-fl-prefer', type=str, choices=['flagos', 'vendor', 'reference'], default='vendor',
+                       help='Backend selection for transformer engine fl.')
+    return parser
+
+
 def add_flagscale_args(parser):
     """
     Add all FlagScale-specific arguments to a Megatron parser.
@@ -785,4 +794,5 @@ def add_flagscale_args(parser):
     parser = _add_auto_tuner_args(parser)
     parser = _add_auto_skip_spiky_loss(parser)
     parser = _add_peft_args(parser)
+    parser = _add_transformer_engine_fl_args(parser)
     return parser
