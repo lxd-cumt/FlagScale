@@ -818,9 +818,11 @@ def pretrain(
     if args.enable_gems:
         try:
             import flag_gems
-            flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
         except ImportError:
             raise RuntimeError("Failed to import 'flag_gems'. Please install flag_gems.")
+        
+        try:
+            flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
         except Exception as e:
             raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
     ###### FlagScale End   ######
