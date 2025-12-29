@@ -31,8 +31,7 @@ system:
 
 model:
   transformer_impl: transformer_engine
-  use_transformer_engine_fl: true
-  flag_gems_log_path: xxx
+  te_fl_prefer: flagos
   num_layers: 32
   hidden_size: 5120
   ffn_hidden_size: 25600
