@@ -801,7 +801,7 @@ def pretrain(
 
     ###### FlagScale Begin ######
     args = get_args()
-    
+
     # enable flagos:triton / vendor:cuda / reference:torch backend for transformer engine fl
     if args.te_fl_prefer:
         os.environ['TE_FL_PREFER'] = args.te_fl_prefer
@@ -824,7 +824,7 @@ def pretrain(
             flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
         except Exception as e:
             raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
-    
+
     ###### FlagScale End   ######
 
     if args.log_progress:
