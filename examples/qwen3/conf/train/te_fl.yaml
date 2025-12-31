@@ -37,6 +37,8 @@ model:
   te_fl_allow_vendors: "vendor_a" # allow vendors for transformer engine fl
   te_fl_deny_vendors: "vendor_b" # deny vendors for transformer engine fl
   enable_flag_gems: True # enable flag gems to replace torch ops for distributed training
+  flag_gems_log_path: xxx
+  flag_gems_unused: [xxx] 
   distributed_backend: flagcx # enable flagcx for distributed training
   #### FlagOS-Related Arguments
   num_layers: 32
