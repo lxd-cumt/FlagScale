@@ -767,6 +767,8 @@ def _add_flagos_args(parser):
     group = parser.add_argument_group(title="transformer engine fl")
     group.add_argument('--te-fl-prefer', type=str, choices=['flagos', 'vendor', 'reference'], default='vendor',
                        help='Backend selection for transformer engine fl.')
+    group.add_argument('--te-fl-per-op', type=str, default=None,
+                       help='Backend selection for custom ops.')
     group.add_argument('--enable-flag-gems', action='store_true',
                        help='Enable flag gems to replace torch ops for distributed training.')
     group.add_argument('--flag-gems-log-path', type=str, default=None,

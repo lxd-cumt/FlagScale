@@ -812,6 +812,8 @@ def pretrain(
     # enable flagos:triton / vendor:cuda / reference:torch backend for transformer engine fl
     if args.te_fl_prefer:
         os.environ['TE_FL_PREFER'] = args.te_fl_prefer
+    if args.te_fl_per_op:
+        os.environ['TE_FL_PER_OP'] = args.te_fl_per_op
     
     # enable flag gems to replace torch ops for distributed training
     # TODO(lixianduo): fix flag gems re-register error

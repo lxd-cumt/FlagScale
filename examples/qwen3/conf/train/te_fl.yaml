@@ -33,6 +33,7 @@ model:
   transformer_impl: transformer_engine
   #### FlagOS-Related Arguments for unified computation backend and communication backend
   te_fl_prefer: flagos # enable flagos:triton in transformer engine fl
+  te_fl_per_op: rmsnorm_fwd=vendor
   enable_gems: True # enable flag gems to replace torch ops for distributed training
   distributed_backend: flagcx # enable flagcx for distributed training
   #### FlagOS-Related Arguments
