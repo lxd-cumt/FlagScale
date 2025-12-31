@@ -234,7 +234,6 @@ class FSTrainArguments:
         args = self.args
 
         if args.hetero_process_meshes is not None:
-            assert args.num_mtp_predictor == 0, "num-mtp-predictor should be 0 when heterogeneous training is enabled"
             # Validate the refined-recompute configuration
             def _parse_recompute_refined_config(recom_config, recom_config_name):
                 """Parse refined recompute configuration."""
@@ -436,19 +435,6 @@ class FSTrainArguments:
                 assert args.num_experts is None, "PEFT is not tested with MoE currently"
                 assert args.recompute_method is None and args.recompute_granularity is None and args.recompute_num_layers is None, "PEFT will raise comfilcts with recompute currently"
                 assert args.ckpt_format == 'torch', "PEFT is only tested with torch format checkpoint"
-
-
-def _add_mtp_args(parser):
-    # add args for Multi-token Prediction module
-    group = parser.add_argument_group(title="mtp")
-
-    # general mtp arguements
-    group.add_argument('--num-mtp-predictor', type=int, default=0,
-                       help='num of multi token predictors')
-    group.add_argument('--mtp-loss-coeff', type=float, default=0.3,
-                       help='Scaling coefficient for mtp loss: 0.3 is recommended in DeepSeekV3.')
-
-    return parser
 
 
 def _add_hetero_args(parser):
@@ -811,7 +797,6 @@ def add_flagscale_args(parser):
     parser = _add_tokenizer_args(parser)
     parser = _add_data_args(parser)
     parser = _add_vision_args(parser)
-    parser = _add_mtp_args(parser)
     parser = _add_hetero_args(parser)
     parser = _add_auto_tuner_args(parser)
     parser = _add_auto_skip_spiky_loss(parser)
