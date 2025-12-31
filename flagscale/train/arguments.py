@@ -769,6 +769,10 @@ def _add_flagos_args(parser):
                        help='Backend selection for transformer engine fl.')
     group.add_argument('--te-fl-per-op', type=str, default=None,
                        help='Backend selection for custom ops.')
+    group.add_argument('--te-fl-allow-vendors', type=str, default=None,
+                       help='Allow vendors for transformer engine fl.')
+    group.add_argument('--te-fl-deny-vendors', type=str, default=None,
+                       help='Deny vendors for transformer engine fl.')
     group.add_argument('--enable-flag-gems', action='store_true',
                        help='Enable flag gems to replace torch ops for distributed training.')
     group.add_argument('--flag-gems-log-path', type=str, default=None,
