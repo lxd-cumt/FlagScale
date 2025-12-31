@@ -815,7 +815,7 @@ def pretrain(
     
     # enable flag gems to replace torch ops for distributed training
     # TODO(lixianduo): fix flag gems re-register error
-    if args.enable_gems:
+    if args.enable_flag_gems:
         try:
             import flag_gems
         except ImportError:
