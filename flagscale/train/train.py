@@ -2575,13 +2575,6 @@ def train(
         )
         cuda_graph_helper.create_cudagraphs()
 
-    # enable flag_gems for transformer_engine_fl
-    if args.use_flag_gems_replace_torch:
-        if not HAVE_GEMS:
-            raise ValueError(f"Can not import flag gems")
-        else:
-            flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
-
     # Run training iterations till done.
     buffered_rollouts = None
     while iteration < args.train_iters:
