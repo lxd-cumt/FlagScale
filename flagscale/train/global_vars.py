@@ -1,10 +1,8 @@
 import torch
 
-from flagscale.train.hetero.parallel_context import ParallelContext
 from flagscale.train.spiky_loss import SpikyLossDetector
 
 _GLOBAL_EXTRA_VALID_DATASETS = None
-_GLOBAL_PARALLEL_CONTEXT = None
 _GLOBAL_SPIKY_LOSS_DETECTOR = None
 
 
@@ -29,18 +27,6 @@ def set_extra_valid_datasets(extra_valid_datasets):
     """Set extra_valid datasets.""" ""
     global _GLOBAL_EXTRA_VALID_DATASETS
     _GLOBAL_EXTRA_VALID_DATASETS = extra_valid_datasets
-
-
-def get_parallel_context():
-    """Return heterogenous parallel context."""
-    return _GLOBAL_PARALLEL_CONTEXT
-
-
-def set_parallel_context(args):
-    """Initialize heterogenous parallel context."""
-    global _GLOBAL_PARALLEL_CONTEXT
-    _ensure_var_is_not_initialized(_GLOBAL_PARALLEL_CONTEXT, "parallel context")
-    _GLOBAL_PARALLEL_CONTEXT = ParallelContext(args)
 
 
 def get_spiky_loss_detector():
