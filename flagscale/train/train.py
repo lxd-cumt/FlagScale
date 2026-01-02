@@ -137,7 +137,7 @@ from flagscale.train.stablelm2_scheduler import StableLM2SchedulerConfig
 from flagscale.train.global_vars import get_spiky_loss_detector
 from flagscale.train.theoretical_memory_usage import report_theoretical_memory as fs_report_theoretical_memory
 from flagscale.train.arguments import add_flagscale_args
-from megatron.plugin.hetero.parallel_context import get_parallel_context
+from plugin.hetero.parallel_context import get_parallel_context
 
 stimer = StragglerDetector()
 

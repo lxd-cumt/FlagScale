@@ -36,7 +36,7 @@ except ImportError:
 
 from flagscale.train.extra_valid import extra_valid_datasets_provider
 from flagscale.train.train import pretrain
-from megatron.plugin.hetero.parallel_context import get_parallel_context
+from plugin.hetero.parallel_context import get_parallel_context
 
 
 stimer = StragglerDetector()

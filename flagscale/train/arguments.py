@@ -14,7 +14,7 @@ except:
         "flagcx is not installed, you can't use flagcx backend for communication.", ImportWarning
     )
 
-from megatron.plugin.hetero.parallel_context import RankMapper
+from plugin.hetero.parallel_context import RankMapper
 
 
 class FSTrainArguments:
