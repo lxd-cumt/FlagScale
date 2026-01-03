@@ -15,6 +15,8 @@ train_megatron:
     - echo pythonpath
     - echo $PYTHONPATH
     - python3 -c "import sys; print('sys.path:'); print('\\n'.join(f'  {p}' for p in sys.path))"
+    - python3 -c "import megatron.core"
+    - python3 -c "import megatron.plugin"
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
     - ulimit -n 65535
