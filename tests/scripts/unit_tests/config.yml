@@ -3,6 +3,12 @@ train_megatron:
   set_environment:
     - source /root/miniconda3/etc/profile.d/conda.sh
     - conda activate flagscale-train
+    # install megatron.core
+    - source /root/miniconda3/bin/activate flagscale-train
+    - git clone https://github.com/lxd-cumt/Megatron-LM-FL.git
+    - cd Megatron-LM-FL
+    - pip install --no-build-isolation .
+    - cd ../
     - git submodule update --init third_party/Megatron-Energon/
     - cp -r third_party/Megatron-Energon/src/megatron/energon flagscale/backends/Megatron-LM-FL/megatron
     - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
