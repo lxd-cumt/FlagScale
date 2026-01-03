@@ -8,6 +8,7 @@ train_megatron:
     - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
     # - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
     - cd flagscale/backends/Megatron-LM-FL
+    - echo "PYTHONPATH: $PYTHONPATH"
     - export PYTHONPATH=.:../../../:$PYTHONPATH
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
