@@ -60,9 +60,15 @@ jobs:
 
           if [ "${{ inputs.type }}" = "train" ] || [ "${{ inputs.type }}" = "hetero_train" ]; then
             source /root/miniconda3/bin/activate flagscale-train
+            git clone https://github.com/lxd-cumt/Megatron-LM-FL.git
+            cd Megatron-LM-FL
+            pip install --no-build-isolation .
             git submodule update --init third_party/Megatron-Energon/
             pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
             if [ "${{ inputs.task }}" = "llava_onevision" ]; then
+              git clone https://github.com/lxd-cumt/Megatron-LM-FL.git
+              cd Megatron-LM-FL
+              pip install --no-build-isolation .
               git submodule update --init third_party/Megatron-Energon/
               pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
             fi
