@@ -3,10 +3,6 @@ train_megatron:
   set_environment:
     - source /root/miniconda3/etc/profile.d/conda.sh
     - conda activate flagscale-train
-    - git submodule update --init third_party/Megatron-Energon/
-    - cp -r third_party/Megatron-Energon/src/megatron/energon flagscale/backends/Megatron-LM-FL/megatron
-    - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-    # - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
     - cd flagscale/backends/Megatron-LM-FL
     - export PYTHONPATH=./:../../../:$PYTHONPATH
     - export NVTE_FLASH_ATTN=0
@@ -148,10 +144,6 @@ train_flagscale:
   set_environment:
     - source /root/miniconda3/etc/profile.d/conda.sh
     - conda activate flagscale-train
-    - git submodule update --init third_party/Megatron-Energon/
-    - cp -r third_party/Megatron-Energon/src/megatron/energon flagscale/backends/Megatron-LM-FL/megatron
-    - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-    # - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
     - export PYTHONPATH=./flagscale/backends/Megatron-LM-FL:$PYTHONPATH
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
