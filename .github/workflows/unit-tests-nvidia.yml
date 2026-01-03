@@ -72,6 +72,7 @@ jobs:
             git clone https://github.com/lxd-cumt/Megatron-LM-FL.git
             cd Megatron-LM-FL
             pip install --no-build-isolation .
+            cd ../
             # PYTHONPATH=./:$PYTHONPATH pip install . --config-settings=backend="Megatron-LM" --verbose --no-build-isolation
           elif [ "${{ inputs.backend }}" = "vllm" ] || [ "${{ inputs.backend }}" = "inference_flagscale" ]; then
             source /root/miniconda3/bin/activate flagscale-inference

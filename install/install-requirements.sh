@@ -100,6 +100,8 @@ if [ "$env" == "train" ] || [ "$env" == "inference" ]; then
     git clone https://github.com/flagos-ai/Megatron-LM-FL.git
     cd Megatron-LM-FL
     pip install --no-build-isolation .
+    cd ..
+    rm -r ./Megatron-LM-FL
 
     # cudnn frontend
     uv pip install nvidia-cudnn-cu12==9.7.1.26
