@@ -62,11 +62,11 @@ jobs:
           trap 'echo "Cleaning up temporary directory..."; rm -rf "$TMP_DIR"' EXIT
 
           if [ "${{ inputs.backend }}" = "train_megatron" ] || [ "${{ inputs.backend }}" = "train_flagscale" ]; then
+            echo ""
             # For megatron unit tests. See details in https://github.com/NVIDIA/Megatron-LM/blob/8479eb35fbca9631acb846c3ad5d868e02214227/tests/unit_tests/conftest.py#L78
             mkdir -p /opt/data
             cp -r /home/gitlab-runner/data/Megatron-LM/* /opt/data/
             cp -r /home/gitlab-runner/tokenizers/Megatron-LM/* /opt/data/
-            echo ""
             # install megatron.core
             source /root/miniconda3/bin/activate flagscale-train
             git clone https://github.com/lxd-cumt/Megatron-LM-FL.git
