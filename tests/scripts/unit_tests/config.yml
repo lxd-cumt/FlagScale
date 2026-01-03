@@ -8,17 +8,13 @@ train_megatron:
     - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
     # - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi av datasets nvtx megatron-energon[av_decode] flashinfer-python onnxscript uvicorn griffe botocore==1.42.9
     - cd flagscale/backends/Megatron-LM-FL
-    - SITE_PACKAGES=$(python3 -c "import site; pkgs=site.getsitepackages(); print(':'.join(pkgs) if pkgs else '')")
-    - echo site-packages
-    - echo $SITE_PACKAGES
-    - export PYTHONPATH=./:../../../:$SITE_PACKAGES:$PYTHONPATH
+    - export PYTHONPATH=./:../../../:$PYTHONPATH
     - echo pythonpath
     - echo $PYTHONPATH
-    - python3 -c "import sys; print('sys.path:'); print('\\n'.join(f'  {p}' for p in sys.path))"
-    - python3 -c "import os; site_pkgs = __import__('site').getsitepackages(); print('Checking site-packages:'); [print(f'  {sp}: megatron exists={os.path.exists(os.path.join(sp, \"megatron\"))}, plugin exists={os.path.exists(os.path.join(sp, \"megatron\", \"plugin\"))}') for sp in site_pkgs]"
-    - python3 -c "import megatron; print(f'megatron.__path__: {megatron.__path__}')"
-    - python3 -c "import megatron.core; print('megatron.core imported successfully')"
-    - python3 -c "import megatron.plugin; print('megatron.plugin imported successfully')"
+    - python3 -c "import megatron.core"
+    - echo success-core
+    - python3 -c "import megatron.plugin"
+    - echo success-plugin
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
     - ulimit -n 65535
