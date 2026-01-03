@@ -97,7 +97,9 @@ if [ "$env" == "train" ] || [ "$env" == "inference" ]; then
     rm -r ./TransformerEngine
 
     # Megatron-LM-FL
-    # to be updated
+    git clone https://github.com/flagos-ai/Megatron-LM-FL.git
+    cd Megatron-LM-FL
+    pip install --no-build-isolation .
 
     # cudnn frontend
     uv pip install nvidia-cudnn-cu12==9.7.1.26
