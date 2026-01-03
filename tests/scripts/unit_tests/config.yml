@@ -15,8 +15,10 @@ train_megatron:
     - echo pythonpath
     - echo $PYTHONPATH
     - python3 -c "import sys; print('sys.path:'); print('\\n'.join(f'  {p}' for p in sys.path))"
-    - python3 -c "import megatron.core"
-    - python3 -c "import megatron.plugin"
+    - python3 -c "import os; site_pkgs = __import__('site').getsitepackages(); print('Checking site-packages:'); [print(f'  {sp}: megatron exists={os.path.exists(os.path.join(sp, \"megatron\"))}, plugin exists={os.path.exists(os.path.join(sp, \"megatron\", \"plugin\"))}') for sp in site_pkgs]"
+    - python3 -c "import megatron; print(f'megatron.__path__: {megatron.__path__}')"
+    - python3 -c "import megatron.core; print('megatron.core imported successfully')"
+    - python3 -c "import megatron.plugin; print('megatron.plugin imported successfully')"
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
     - ulimit -n 65535
