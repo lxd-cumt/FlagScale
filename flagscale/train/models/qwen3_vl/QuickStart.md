@@ -11,6 +11,7 @@ cd FlagScale
 ## 1.2. Apply the submodule patch code
 
 ```bash
+# to be updated
 python ./tools/patch/unpatch.py --backend=Megatron-LM
 python ./tools/patch/unpatch.py --backend=Megatron-Energon
 cd ./third_party/Megatron-Energon/
