@@ -16,8 +16,8 @@ from megatron.core import InferenceParams
 from megatron.core.models.vision.multimodal_projector import MultimodalProjector
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 
-from flagscale.models.megatron_models.qwen2_5_vl.vit_model import PatchEmbed
-from flagscale.models.megatron_models.qwen3_vl.vision_transformer_block import VisionTransformerBlock
+from flagscale.models.megatron.qwen2_5_vl.vit_model import PatchEmbed
+from flagscale.models.megatron.qwen3_vl.vision_transformer_block import VisionTransformerBlock
 
 # reference from https://github.com/huggingface/transformers/blob/d08b98b965176ea9cf8c8e8b24995c955b7e2ec9/src/transformers/models/qwen3_vl/modeling_qwen3_vl.py#L79
 # this is different from RotaryEmbedding in megatron.core.transformer.rotary_embedding.

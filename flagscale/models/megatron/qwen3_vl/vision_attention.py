@@ -82,7 +82,7 @@ except ImportError:
     SplitAlongDim, TELinear, set_save_original_input = None, None, None
 
 # NOTE: The only difference between this and the original SelfAttention is "apply_rotary_pos_emb" where using "float" not the dtype of "hidden_states"
-from flagscale.models.megatron_models.qwen3_vl.vision_rope_utils import apply_rotary_pos_emb
+from flagscale.models.megatron.qwen3_vl.vision_rope_utils import apply_rotary_pos_emb
 
 class VisionSelfAttention(Attention):
     """Self-attention layer class

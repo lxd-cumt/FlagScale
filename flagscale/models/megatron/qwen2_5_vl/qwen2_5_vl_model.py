@@ -14,8 +14,8 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.packed_seq_params import PackedSeqParams
 
 
-from flagscale.models.megatron_models.qwen2_5_vl.vit_model import Qwen2_5VisionModel
-from flagscale.models.megatron_models.qwen2_5_vl.language_module import QwenVLLanguageModel
+from flagscale.models.megatron.qwen2_5_vl.vit_model import Qwen2_5VisionModel
+from flagscale.models.megatron.qwen2_5_vl.language_module import QwenVLLanguageModel
 
 # Note: This is under development and may be missing features.
 class Qwen2_5VLModel(MegatronModule):

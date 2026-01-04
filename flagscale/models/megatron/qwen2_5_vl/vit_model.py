@@ -14,7 +14,7 @@ from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core import InferenceParams
 from megatron.core.models.vision.multimodal_projector import MultimodalProjector
 
-from flagscale.models.megatron_models.qwen2_5_vl.vision_transformer_block import VisionTransformerBlock
+from flagscale.models.megatron.qwen2_5_vl.vision_transformer_block import VisionTransformerBlock
 
 
 # copied from https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_vl/modeling_qwen2_vl.py

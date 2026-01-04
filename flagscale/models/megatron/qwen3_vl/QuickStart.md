@@ -31,7 +31,7 @@ cd Qwen3-VL-8B-Instruct
 git lfs pull
 
 cd ./tools/checkpoint/qwen3_vl/
-export PYTHONPATH=$PYTHONPATH:../../../:../../../third_party/Megatron-LM/
+export PYTHONPATH=$PYTHONPATH:../../../:../../../flagscale/train/
 bash hf2mcore_qwen_vl_convertor.sh 8B \
 /mnt/qwen-vl-ckpts/Qwen3-VL-8B-Instruct \
 /mnt/qwen-vl-ckpts/Qwen3-VL-8B-Instruct-tp2 \
@@ -54,7 +54,7 @@ unzip images.zip
 
 #convert to webdataset format
 cd ./tools/datasets/qwenvl/
-export PYTHONPATH=$PYTHONPATH:../../../third_party/Megatron-LM/
+export PYTHONPATH=$PYTHONPATH:../../../flagscale/train/
 
 python convert_custom_dataset_to_wds_chatml_str.py \
     --dataset-root=/mnt/LLaVA-Pretrain \

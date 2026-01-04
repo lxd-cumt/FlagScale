@@ -2,7 +2,7 @@
 import os
 
 import torch
-from flagscale.models.megatron_models.llava_onevision.dataset_helpers import print_error_handler, AnyResTaskEncoder
+from flagscale.models.megatron.llava_onevision.dataset_helpers import print_error_handler, AnyResTaskEncoder
 
 from megatron.core import mpu
 from megatron.energon import (
