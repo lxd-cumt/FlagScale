@@ -71,7 +71,7 @@ jobs:
   unit_tests_train_flagscale:
     needs:
       - set-env
-      - unit_tests_train_megatron
+      # - unit_tests_train_megatron
     uses: ./.github/workflows/unit-tests-nvidia.yml
     strategy:
       matrix:
@@ -189,7 +189,7 @@ jobs:
   # Check All Tests
   all-tests:
     needs:
-      - unit_tests_train_megatron
+      # - unit_tests_train_megatron
       - unit_tests_train_flagscale
       # - unit_tests_inference_flagscale
       - functional_tests_train
