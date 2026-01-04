@@ -44,7 +44,7 @@ from megatron.core.transformer.moe.moe_layer import MoELayer, MoESubmodules
 from megatron.core.transformer.mlp import MLPSubmodules
 from megatron.core.transformer.moe.experts import TEGroupedMLP
 
-from flagscale.train.models.qwen3_vl.vision_attention import VisionSelfAttention
+from flagscale.models.megatron_models.qwen3_vl.vision_attention import VisionSelfAttention
 # Use this spec to use lower level Transformer Engine modules (required for fp8 training)
 def get_gpt_layer_with_transformer_engine_spec(
     num_experts: Optional[int] = None,

@@ -26,7 +26,7 @@ from megatron.core.process_groups_config import ProcessGroupCollection
 
 from .language_transformer_block import LanguageTransformerBlock
 
-from flagscale.train.models.qwen2_5_vl.language_module import QwenVLLanguageModelEmbedding
+from flagscale.models.megatron_models.qwen2_5_vl.language_module import QwenVLLanguageModelEmbedding
 
 ######### New Impl for Qwen3-VL Language Model #########
 # reference from https://github.com/huggingface/transformers/blob/d08b98b965176ea9cf8c8e8b24995c955b7e2ec9/src/transformers/models/qwen3_vl/modeling_qwen3_vl.py#L278
