@@ -11,7 +11,7 @@ import logging
 import math
 import os
 import sys
-from typing import List, Optional
+from typing import Any, Optional
 
 import torch.distributed
 
