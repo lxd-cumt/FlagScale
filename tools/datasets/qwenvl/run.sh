@@ -1,4 +1,4 @@
-export PYTHONPATH=$PYTHONPATH:../../../:../../../flagscale/trai/
+export PYTHONPATH=$PYTHONPATH:../../../:../../../flagscale/train/
 
 python convert_custom_dataset_to_wds_chatml_str.py \
     --dataset-root=/share/project/lizhiyu/LLaMA-Factory/data/sample_dataset/text_only/ \
