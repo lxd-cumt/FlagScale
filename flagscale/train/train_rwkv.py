@@ -20,7 +20,6 @@ from megatron.training import (
     get_timers,
     get_tokenizer,
     inprocess_restart,
-    pretrain,
     print_rank_0,
 )
 from megatron.training.arguments import core_transformer_config_from_args
