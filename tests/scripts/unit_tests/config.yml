@@ -4,7 +4,7 @@
 #     - source /root/miniconda3/etc/profile.d/conda.sh
 #     - conda activate flagscale-train
 #     - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-#     - cd flagscale/backends/Megatron-LM-FL
+#     - cd flagscale/train
 #     - export PYTHONPATH=./:../../../:$PYTHONPATH
 #     - export NVTE_FLASH_ATTN=0
 #     - export NVTE_FUSED_ATTN=0
@@ -146,7 +146,7 @@ train_flagscale:
     - source /root/miniconda3/etc/profile.d/conda.sh
     - conda activate flagscale-train
     - pip install httpx multi-storage-client boto3 google-cloud-storage fastapi uvicorn griffe
-    - export PYTHONPATH=./flagscale/backends/Megatron-LM-FL:$PYTHONPATH
+    - export PYTHONPATH=./flagscale/train:$PYTHONPATH
     - export NVTE_FLASH_ATTN=0
     - export NVTE_FUSED_ATTN=0
     - ulimit -n 65535

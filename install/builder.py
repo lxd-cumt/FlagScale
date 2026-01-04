@@ -414,13 +414,13 @@ def build_megatron_energon(device, root_dir):
         energon_src = os.path.join(
             root_dir, "third_party", "Megatron-Energon", "src", "megatron", "energon"
         )
-        energon_dst = os.path.join(root_dir, "flagscale", "backends", "Megatron-LM-FL", "megatron", "energon")
+        energon_dst = os.path.join(root_dir, "flagscale", "train", "megatron", "energon")
 
         if not os.path.exists(energon_src):
             raise FileNotFoundError(f"Energon source directory not found: {energon_src}")
 
         # Check if Megatron-LM exists
-        megatron_lm_path = os.path.join(root_dir, "flagscale", "backends", "Megatron-LM-FL")
+        megatron_lm_path = os.path.join(root_dir, "flagscale", "train")
         if not os.path.exists(megatron_lm_path):
             print(f"[builder] Warning: Megatron-LM not found at {megatron_lm_path}")
             print(f"[builder] Megatron-Energon requires Megatron-LM to be initialized first")
