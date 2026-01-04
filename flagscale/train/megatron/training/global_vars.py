@@ -29,6 +29,8 @@ _GLOBAL_ENERGY_MONITOR = None
 _GLOBAL_SIGNAL_HANDLER = None
 
 _GLOBAL_SPIKY_LOSS_DETECTOR = None
+_GLOBAL_EXTRA_VALID_DATASETS = None
+
 
 
 def get_args():
@@ -365,7 +367,6 @@ def destroy_global_vars():
     _GLOBAL_SIGNAL_HANDLER = None
 
 
-
 def get_spiky_loss_detector():
     """Return spiky loss detector."""
     _ensure_var_is_initialized(_GLOBAL_SPIKY_LOSS_DETECTOR, "spiky loss detector")
@@ -377,3 +378,14 @@ def set_spiky_loss_detector(args):
     global _GLOBAL_SPIKY_LOSS_DETECTOR
     _ensure_var_is_not_initialized(_GLOBAL_SPIKY_LOSS_DETECTOR, "spiky loss detector")
     _GLOBAL_SPIKY_LOSS_DETECTOR = SpikyLossDetector(args.spiky_loss_threshold)
+
+
+def get_extra_valid_datasets():
+    """Return extra_valid datasets.""" ""
+    return _GLOBAL_EXTRA_VALID_DATASETS
+
+
+def set_extra_valid_datasets(extra_valid_datasets):
+    """Set extra_valid datasets.""" ""
+    global _GLOBAL_EXTRA_VALID_DATASETS
+    _GLOBAL_EXTRA_VALID_DATASETS = extra_valid_datasets

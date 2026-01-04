@@ -34,7 +34,7 @@ try:
 except ImportError:
     has_nvidia_modelopt = False
 
-from flagscale.train.extra_valid import extra_valid_datasets_provider
+from megatron.training.extra_valid import extra_valid_datasets_provider
 from flagscale.train.train import pretrain
 from megatron.plugin.hetero.parallel_context import get_parallel_context
 

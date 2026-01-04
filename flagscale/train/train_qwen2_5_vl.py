@@ -70,8 +70,6 @@ try:
 except ImportError:
     has_nvidia_modelopt = False
 
-from flagscale.train.datasets.sft_dataset import SFTDataset, SFTDatasetConfig
-from flagscale.train.extra_valid import extra_valid_datasets_provider
 from flagscale.train.train import pretrain
 
 stimer = StragglerDetector()

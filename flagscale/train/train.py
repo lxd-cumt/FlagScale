@@ -131,8 +131,8 @@ from megatron.training import one_logger_utils
 
 from megatron.training import ft_integration
 
-from flagscale.train.extra_valid import extra_evaluate_and_print_results
-from flagscale.train.extra_valid import build_extra_valid_data_iterators
+from megatron.training.extra_valid import extra_evaluate_and_print_results
+from megatron.training.extra_valid import build_extra_valid_data_iterators
 from flagscale.train.stablelm2_scheduler import StableLM2SchedulerConfig
 from megatron.training.global_vars import get_spiky_loss_detector
 from flagscale.train.theoretical_memory_usage import report_theoretical_memory as fs_report_theoretical_memory
