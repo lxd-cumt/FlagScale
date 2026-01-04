@@ -8,10 +8,15 @@ import warnings
 from contextlib import contextmanager
 from datetime import datetime
 from collections import defaultdict
+import dataclasses
+import copy
+from typing import Any
 
 import torch
 
 from megatron.core.msc_utils import MultiStorageClientFeature, open_file
+from megatron.core.optimizer import AdamOptimizerConfig, SGDOptimizerConfig, MuonOptimizerConfig, OptimizerConfig, ParamKey
+
 
 try:
     from transformer_engine.pytorch.optimizers import multi_tensor_applier, multi_tensor_l2norm
@@ -750,3 +755,43 @@ def get_nvtx_range():
         def dummy_range(msg):
             yield
         return dummy_range
+
+
+def get_megatron_optimizer_config(args: Any) -> OptimizerConfig:
+    """Return a Megatron optimizer config object from Megatron's arguments."""
+
+    config = None
+    if args.optimizer == 'adam':
+        kwargs = {}
+        for f in dataclasses.fields(AdamOptimizerConfig):
+            if hasattr(args, f.name):
+                kwargs[f.name] = getattr(args, f.name)
+        config = AdamOptimizerConfig(**kwargs)
+    elif args.optimizer == 'sgd':
+        kwargs = {}
+        for f in dataclasses.fields(SGDOptimizerConfig):
+            if hasattr(args, f.name):
+                kwargs[f.name] = getattr(args, f.name)
+        config = SGDOptimizerConfig(**kwargs)
+    elif args.optimizer == 'muon':
+        kwargs = {}
+        for f in dataclasses.fields(MuonOptimizerConfig):
+            if hasattr(args, f.name):
+                kwargs[f.name] = getattr(args, f.name)
+        config = MuonOptimizerConfig(**kwargs)
+    else:
+        raise ValueError("Invalid optimizer type!")
+
+    # Construct the appropriate config_overrides object.
+    # TODO: add more logic here as needed down the road.
+    if args.decoupled_lr is not None:
+        decoupled_param_key = ParamKey(attr="is_embedding_or_output_parameter")
+        decoupled_optimizer_config = copy.deepcopy(config)
+        decoupled_optimizer_config.lr = args.decoupled_lr
+        if args.decoupled_min_lr is not None:
+            decoupled_optimizer_config.min_lr = args.decoupled_min_lr
+        config_overrides = {decoupled_param_key: decoupled_optimizer_config}
+    else:
+        config_overrides = None
+
+    return config, config_overrides
