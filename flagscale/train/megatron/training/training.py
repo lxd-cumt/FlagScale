@@ -814,23 +814,10 @@ def pretrain(
         os.environ['TE_FL_DENY_VENDORS'] = args.te_fl_deny_vendors
     if args.te_fl_enable_flagos_permanently:
         os.environ['TE_FL_ENABLE_FLAGOS_PERMANENTLY'] = "True"
-    
-    # enable flag gems to replace torch ops for distributed training
-    # TODO(lixianduo): fix flag gems re-register error
-    if args.enable_flag_gems:
-        flag_gems_global_registrar = None
-        try:
-            import flag_gems
-            flag_gems_global_registrar = getattr(flag_gems, 'current_work_registrar', None)
-        except ImportError:
-            raise RuntimeError("Failed to import 'flag_gems'. Please install flag_gems.")
-        
-        is_flag_gems_global_enabled = flag_gems_global_registrar is not None
-        if not is_flag_gems_global_enabled:
-            try:
-                flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
-            except Exception as e:
-                raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
+    if args.te_fl_flag_gems_log_path:
+        os.environ['TE_FL_FLAG_GEMS_LOG_PATH'] = args.te_fl_flag_gems_log_path
+    if args.te_fl_flag_gems_unused:
+        os.environ['TE_FL_FLAG_GEMS_UNUSED'] = args.te_fl_flag_gems_unused
     ###### FlagScale End   ######
 
     if args.log_progress:

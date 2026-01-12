@@ -773,12 +773,10 @@ def _add_flagos_args(parser):
                        help='Allow vendors for transformer engine fl.')
     group.add_argument('--te-fl-deny-vendors', type=str, default=None,
                        help='Deny vendors for transformer engine fl.')
-    group.add_argument('--enable-flag-gems', action='store_true',
-                       help='Enable flag gems to replace torch ops for distributed training.')
-    group.add_argument('--flag-gems-log-path', type=str, default=None,
+    group.add_argument('--te-fl-flag-gems-log-path', type=str, default=None,
                         help='Path of flag gems logging')
     group.add_argument(
-        '--flag-gems-unused',
+        '--te-fl-flag-gems-unused',
         nargs='*',
         default=None,
         help='Flag Gems unused ops list'
