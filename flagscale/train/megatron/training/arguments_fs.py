@@ -767,6 +767,8 @@ def _add_flagos_args(parser):
                        help='Backend selection for transformer engine fl.')
     group.add_argument('--te-fl-per-op', type=str, default=None,
                        help='Backend selection for custom ops.')
+    group.add_argument('--te-fl-enable-flagos-permanently', action='store_true',
+                       help='Permanently enables flag_gems with a single switch.')
     group.add_argument('--te-fl-allow-vendors', type=str, default=None,
                        help='Allow vendors for transformer engine fl.')
     group.add_argument('--te-fl-deny-vendors', type=str, default=None,

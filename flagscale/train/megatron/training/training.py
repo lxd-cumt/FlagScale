@@ -816,15 +816,19 @@ def pretrain(
     # enable flag gems to replace torch ops for distributed training
     # TODO(lixianduo): fix flag gems re-register error
     if args.enable_flag_gems:
+        flag_gems_global_registrar = None
         try:
             import flag_gems
+            flag_gems_global_registrar = getattr(flag_gems, 'current_work_registrar', None)
         except ImportError:
             raise RuntimeError("Failed to import 'flag_gems'. Please install flag_gems.")
         
-        try:
-            flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
-        except Exception as e:
-            raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
+        is_flag_gems_global_enabled = flag_gems_global_registrar is not None
+        if not is_flag_gems_global_enabled:
+            try:
+                flag_gems.enable(record=True, once=True, unused=args.flag_gems_unused, path=args.flag_gems_log_path)
+            except Exception as e:
+                raise RuntimeError(f"Failed to enable 'flag_gems': {e}.")
     ###### FlagScale End   ######
 
     if args.log_progress:
