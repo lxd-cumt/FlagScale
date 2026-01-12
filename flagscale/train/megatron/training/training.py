@@ -813,7 +813,7 @@ def pretrain(
     if args.te_fl_deny_vendors:
         os.environ['TE_FL_DENY_VENDORS'] = args.te_fl_deny_vendors
     if args.te_fl_enable_flagos_permanently:
-        os.environ['TE_FL_ENABLE_FLAGOS_PERMANENTLY'] = args.te_fl_enable_flagos_permanently
+        os.environ['TE_FL_ENABLE_FLAGOS_PERMANENTLY'] = "True"
     
     # enable flag gems to replace torch ops for distributed training
     # TODO(lixianduo): fix flag gems re-register error
