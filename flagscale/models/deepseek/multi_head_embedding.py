@@ -1,5 +1,4 @@
 ## built-in
-from typing import List
 
 ## third-party
 import torch
@@ -14,18 +13,18 @@ from .engram_config import EngramConfig
 
 
 class MultiHeadEmbedding(nn.Module):
-    def __init__(self, engram_cfg: EngramConfig, list_of_N: List[int], D: int):
+    def __init__(self, engram_cfg: EngramConfig, list_of_N: list[int], D: int):
         super().__init__()
         self.engram_cfg = engram_cfg
         self.num_heads = len(list_of_N)
         self.embedding_dim = D
-        
+
         offsets = [0]
         for n in list_of_N[:-1]:
             offsets.append(offsets[-1] + n)
-        
+
         self.register_buffer("offsets", torch.tensor(offsets, dtype=torch.long))
-        
+
         total_N = sum(list_of_N)
 
         # embeddings (parallel).
@@ -45,6 +44,5 @@ class MultiHeadEmbedding(nn.Module):
         output = self.embedding(shifted_input_ids)
 
         if not self.reduce_scatter_embeddings:
-            # Data format change to avoid explicit tranposes : [b s, ...] --> [s b, ...].
             output = output.transpose(0, 1).contiguous()
         return output

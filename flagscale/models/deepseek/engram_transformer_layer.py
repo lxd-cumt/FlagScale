@@ -1,31 +1,30 @@
+# ruff: noqa: RUF013
+# ruff: noqa: E711
+
 ## built-in
-from typing import Any, Optional, Union
+from contextlib import nullcontext
+from typing import Any
+
 import torch
 from torch import Tensor
-from contextlib import nullcontext
 
-# megatron-core
-from megatron.core.transformer import TransformerLayer
-from megatron.core.transformer.transformer_block import TransformerBlock
-from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.enums import Fp8Recipe
 from megatron.core.fp4_utils import get_fp4_context
 from megatron.core.fp8_utils import get_fp8_context
 from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.packed_seq_params import PackedSeqParams
+
+# megatron-core
+from megatron.core.transformer import TransformerLayer
+from megatron.core.transformer.transformer_block import TransformerBlock
 from megatron.core.utils import (
     WrappedTensor,
     deprecate_inference_params,
     make_viewless_tensor,
-    get_pg_rank,
-)
-from megatron.core.transformer.spec_utils import build_module
-from megatron.core.transformer.transformer_layer import (
-    get_transformer_layer_offset,
 )
 
-# engram 
+# engram
 from .engram import Engram
 from .engram_config import EngramConfig
 
@@ -34,7 +33,9 @@ class EngramTransformerLayer(TransformerLayer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert isinstance(self.config, EngramConfig), "config must be a EngramConfig"
-        self.engram_hash_layer_id = self.layer_number - 1 # global layer_number starts at 1 in MCore
+        self.engram_hash_layer_id = (
+            self.layer_number - 1
+        )  # global layer_number starts at 1 in MCore
         self.engram = Engram(
             engram_cfg=self.config,
             layer_id=self.engram_hash_layer_id,
@@ -45,23 +46,26 @@ class EngramTransformerLayer(TransformerLayer):
         input_ids: Tensor,
         hash_input_ids: Tensor,
         hidden_states: Tensor,
-        attention_mask: Optional[Tensor] = None,
-        context: Optional[Tensor] = None,
-        context_mask: Optional[Tensor] = None,
-        rotary_pos_emb: Optional[Tensor] = None,
-        rotary_pos_cos: Optional[Tensor] = None,
-        rotary_pos_sin: Optional[Tensor] = None,
-        rotary_pos_cos_sin: Optional[Tensor] = None,
-        attention_bias: Optional[Tensor] = None,
-        inference_context: Optional[Any] = None,
-        packed_seq_params: Optional[PackedSeqParams] = None,
-        sequence_len_offset: Optional[Tensor] = None,
+        attention_mask: Tensor | None = None,
+        context: Tensor | None = None,
+        context_mask: Tensor | None = None,
+        rotary_pos_emb: Tensor | None = None,
+        rotary_pos_cos: Tensor | None = None,
+        rotary_pos_sin: Tensor | None = None,
+        rotary_pos_cos_sin: Tensor | None = None,
+        attention_bias: Tensor | None = None,
+        inference_context: Any | None = None,
+        packed_seq_params: PackedSeqParams | None = None,
+        sequence_len_offset: Tensor | None = None,
         *,
-        inference_params: Optional[Any] = None,
+        inference_params: Any | None = None,
     ):
         if self.engram_hash_layer_id in self.config.engram_layer_ids:
-            hidden_states = self.engram(hidden_states=hidden_states,hash_input_ids=hash_input_ids) + hidden_states
-        
+            hidden_states = (
+                self.engram(hidden_states=hidden_states, hash_input_ids=hash_input_ids)
+                + hidden_states
+            )
+
         return super().forward(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -79,39 +83,39 @@ class EngramTransformerLayer(TransformerLayer):
         )
 
     def sharded_state_dict(
-        self, prefix: str = '', sharded_offsets: tuple = (), metadata: Optional[dict] = None
+        self, prefix: str = "", sharded_offsets: tuple = (), metadata: dict | None = None
     ):
         raise NotImplementedError("Sharded state dict is not supported for EngramTransformerLayer")
 
 
 class EngramTransformerBlock(TransformerBlock):
-
     def forward(
         self,
         input_ids: Tensor,
         engram_hash_input_ids: Any,
-        hidden_states: Union[Tensor, WrappedTensor],
-        attention_mask: Optional[Tensor],
-        context: Optional[Tensor] = None,
-        context_mask: Optional[Tensor] = None,
-        rotary_pos_emb: Optional[Tensor] = None,
-        rotary_pos_cos: Optional[Tensor] = None,
-        rotary_pos_sin: Optional[Tensor] = None,
-        rotary_pos_cos_sin: Optional[Tensor] = None,
-        attention_bias: Optional[Tensor] = None,
-        inference_context: Optional[BaseInferenceContext] = None,
-        packed_seq_params: Optional[PackedSeqParams] = None,
-        sequence_len_offset: Optional[Tensor] = None,
+        hidden_states: Tensor | WrappedTensor,
+        attention_mask: Tensor | None,
+        context: Tensor | None = None,
+        context_mask: Tensor | None = None,
+        rotary_pos_emb: Tensor | None = None,
+        rotary_pos_cos: Tensor | None = None,
+        rotary_pos_sin: Tensor | None = None,
+        rotary_pos_cos_sin: Tensor | None = None,
+        attention_bias: Tensor | None = None,
+        inference_context: BaseInferenceContext | None = None,
+        packed_seq_params: PackedSeqParams | None = None,
+        sequence_len_offset: Tensor | None = None,
         *,
-        inference_params: Optional[BaseInferenceContext] = None,
-        dynamic_inference_decode_only: Optional[bool] = None,
+        inference_params: BaseInferenceContext | None = None,
+        dynamic_inference_decode_only: bool | None = None,
     ):
-
         ########## FlagScale Begin ##########
         # for refined recompute
         self.current_microbatch = -1
-        if len(self.layers) > 0: # some pp-stage has no layers in pipeline_model_parallel_layout,such as embedding stage
-            if hasattr(self.layers[0], 'current_microbatch'):
+        if (
+            len(self.layers) > 0
+        ):  # some pp-stage has no layers in pipeline_model_parallel_layout,such as embedding stage
+            if hasattr(self.layers[0], "current_microbatch"):
                 self.current_microbatch = self.layers[0].current_microbatch
         ########## FlagScale End ##########
 
@@ -182,7 +186,7 @@ class EngramTransformerBlock(TransformerBlock):
                     ][self.current_microbatch]
                     == 0
                 ):
-                    self.config.recompute_method = 'uniform'
+                    self.config.recompute_method = "uniform"
                 elif (
                     self.config.recompute_method_per_stage_micro_batch[
                         parallel_state.get_virtual_pipeline_model_parallel_rank()
@@ -191,9 +195,11 @@ class EngramTransformerBlock(TransformerBlock):
                     ][self.current_microbatch]
                     == 1
                 ):
-                    self.config.recompute_method = 'block'
+                    self.config.recompute_method = "block"
                 else:
-                    raise ValueError("the item of recompute_method_per_stage_micro_batch must be '0' or '1' ")
+                    raise ValueError(
+                        "the item of recompute_method_per_stage_micro_batch must be '0' or '1' "
+                    )
             else:
                 if (
                     self.config.recompute_method_per_stage_micro_batch[
@@ -201,28 +207,34 @@ class EngramTransformerBlock(TransformerBlock):
                     ][self.current_microbatch]
                     == 0
                 ):
-                    self.config.recompute_method = 'uniform'
+                    self.config.recompute_method = "uniform"
                 elif (
                     self.config.recompute_method_per_stage_micro_batch[
                         parallel_state.get_pipeline_model_parallel_rank()
                     ][self.current_microbatch]
                     == 1
                 ):
-                    self.config.recompute_method = 'block'
+                    self.config.recompute_method = "block"
                 else:
-                    raise ValueError("the item of recompute_method_per_stage_micro_batch must be '0' or '1' ")
+                    raise ValueError(
+                        "the item of recompute_method_per_stage_micro_batch must be '0' or '1' "
+                    )
             ########## FlagScale End ##########
         if self.config.recompute_num_layers_per_stage_micro_batch != None:
             if self.config.virtual_pipeline_model_parallel_size != None:
-                self.config.recompute_num_layers = self.config.recompute_num_layers_per_stage_micro_batch[
-                    parallel_state.get_virtual_pipeline_model_parallel_rank()
-                    * self.config.pipeline_model_parallel_size
-                    + parallel_state.get_pipeline_model_parallel_rank()
-                ][self.current_microbatch]
+                self.config.recompute_num_layers = (
+                    self.config.recompute_num_layers_per_stage_micro_batch[
+                        parallel_state.get_virtual_pipeline_model_parallel_rank()
+                        * self.config.pipeline_model_parallel_size
+                        + parallel_state.get_pipeline_model_parallel_rank()
+                    ][self.current_microbatch]
+                )
             else:
-                self.config.recompute_num_layers = self.config.recompute_num_layers_per_stage_micro_batch[
-                    parallel_state.get_pipeline_model_parallel_rank()
-                ][self.current_microbatch]
+                self.config.recompute_num_layers = (
+                    self.config.recompute_num_layers_per_stage_micro_batch[
+                        parallel_state.get_pipeline_model_parallel_rank()
+                    ][self.current_microbatch]
+                )
             if self.config.recompute_num_layers == 0:
                 self.config.recompute_method = None
                 self.config.recompute_granularity = None
@@ -239,7 +251,7 @@ class EngramTransformerBlock(TransformerBlock):
 
         with rng_context, outer_quantization_context:
             # Forward pass.
-            if self.config.recompute_granularity == 'full' and self.training:
+            if self.config.recompute_granularity == "full" and self.training:
                 hidden_states = self._checkpointed_forward(
                     hidden_states=hidden_states,
                     attention_mask=attention_mask,
@@ -273,28 +285,29 @@ class EngramTransformerBlock(TransformerBlock):
 
                         # Only pass input_ids to EngramTransformerLayer
                         if isinstance(layer, EngramTransformerLayer):
-                            layer_kwargs['input_ids'] = input_ids
+                            layer_kwargs["input_ids"] = input_ids
                             engram_hash_layer_id = layer.layer_number - 1
                             hash_input_ids = engram_hash_input_ids[engram_hash_layer_id]
-                            layer_kwargs['hash_input_ids'] = hash_input_ids
+                            layer_kwargs["hash_input_ids"] = hash_input_ids
 
-                        
                         # Add common parameters
-                        layer_kwargs.update({
-                            'hidden_states': hidden_states,
-                            'attention_mask': attention_mask,
-                            'context': context,
-                            'context_mask': context_mask,
-                            'rotary_pos_emb': rotary_pos_emb,
-                            'rotary_pos_cos': rotary_pos_cos,
-                            'rotary_pos_sin': rotary_pos_sin,
-                            'rotary_pos_cos_sin': rotary_pos_cos_sin,
-                            'attention_bias': attention_bias,
-                            'inference_context': inference_context,
-                            'packed_seq_params': packed_seq_params,
-                            'sequence_len_offset': sequence_len_offset,
-                        })
-                        
+                        layer_kwargs.update(
+                            {
+                                "hidden_states": hidden_states,
+                                "attention_mask": attention_mask,
+                                "context": context,
+                                "context_mask": context_mask,
+                                "rotary_pos_emb": rotary_pos_emb,
+                                "rotary_pos_cos": rotary_pos_cos,
+                                "rotary_pos_sin": rotary_pos_sin,
+                                "rotary_pos_cos_sin": rotary_pos_cos_sin,
+                                "attention_bias": attention_bias,
+                                "inference_context": inference_context,
+                                "packed_seq_params": packed_seq_params,
+                                "sequence_len_offset": sequence_len_offset,
+                            }
+                        )
+
                         hidden_states, context = layer(**layer_kwargs)
 
                     if (
@@ -322,6 +335,6 @@ class EngramTransformerBlock(TransformerBlock):
         return hidden_states
 
     def sharded_state_dict(
-        self, prefix: str = '', sharded_offsets: tuple = (), metadata: dict = None
+        self, prefix: str = "", sharded_offsets: tuple = (), metadata: dict = None
     ):
         raise NotImplementedError("Sharded state dict is not supported for EngramTransformerBlock")

@@ -1,11 +1,11 @@
+# ruff: noqa: RUF013
 ## built-in
-from typing import Optional, Dict
 from torch import Tensor
-import torch
+
+from megatron.core.inference.contexts import BaseInferenceContext
 
 ## megatron-core
 from megatron.core.models.gpt import GPTModel
-from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.utils import deprecate_inference_params
 
@@ -13,20 +13,18 @@ from megatron.core.utils import deprecate_inference_params
 from .engram_transformer_layer import EngramTransformerBlock
 from .ngram_hash import get_or_create_hash_mapping
 
+
 class EngramModel(GPTModel):
-    def __init__(
-        self, *args, **kwargs
-    ):
+    def __init__(self, *args, **kwargs):
         # NOTE: We temporarily replace TransformerBlock with EngramTransformerBlock
         # during super().__init__() to avoid creating decoder twice.
         # This is necessary because GPTModel.__init__ hardcodes TransformerBlock.
         # The replacement is scoped to this initialization only.
-        from megatron.core.transformer.transformer_block import TransformerBlock
         import megatron.core.models.gpt.gpt_model as gpt_module
-        
+
         original_block = gpt_module.TransformerBlock
         gpt_module.TransformerBlock = EngramTransformerBlock
-        
+
         try:
             super().__init__(*args, **kwargs)
             # self.decoder is now EngramTransformerBlock, no need to recreate
@@ -35,13 +33,13 @@ class EngramModel(GPTModel):
 
         self.engram_hash = get_or_create_hash_mapping(
             engram_vocab_size=self.config.engram_vocab_size,
-            max_ngram_size = self.config.max_ngram_size,
-            n_embed_per_ngram = self.config.n_embed_per_ngram,
-            n_head_per_ngram = self.config.n_head_per_ngram,
-            layer_ids = self.config.engram_layer_ids,
+            max_ngram_size=self.config.max_ngram_size,
+            n_embed_per_ngram=self.config.n_embed_per_ngram,
+            n_head_per_ngram=self.config.n_head_per_ngram,
+            layer_ids=self.config.engram_layer_ids,
             tokenizer_name_or_path=self.config.engram_tokenizer_name_or_path,
-            pad_id = self.config.engram_pad_id,
-            seed = self.config.engram_seed,
+            pad_id=self.config.engram_pad_id,
+            seed=self.config.engram_seed,
         )
 
     def forward(
@@ -54,12 +52,11 @@ class EngramModel(GPTModel):
         inference_context: BaseInferenceContext = None,
         packed_seq_params: PackedSeqParams = None,
         extra_block_kwargs: dict = None,
-        runtime_gather_output: Optional[bool] = None,
+        runtime_gather_output: bool | None = None,
         *,
-        inference_params: Optional[BaseInferenceContext] = None,
-        loss_mask: Optional[Tensor] = None,
+        inference_params: BaseInferenceContext | None = None,
+        loss_mask: Tensor | None = None,
     ) -> Tensor:
-        
         assert input_ids is not None, "Input ids can not be None for EngramModel"
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
@@ -116,6 +113,6 @@ class EngramModel(GPTModel):
         )
 
     def sharded_state_dict(
-        self, prefix: str = '', sharded_offsets: tuple = (), metadata: Optional[Dict] = None
+        self, prefix: str = "", sharded_offsets: tuple = (), metadata: dict | None = None
     ):
         raise NotImplementedError("Sharded state dict is not supported for EngramModel")

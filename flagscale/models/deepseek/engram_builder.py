@@ -1,21 +1,20 @@
+# ruff: noqa: TC001
+# ruff: noqa: F401
 ## built-in
 import logging
-from typing import Optional
+
+from megatron.core.fusions.fused_bias_dropout import get_bias_dropout_add
+from megatron.core.models.backends import (
+    BackendSpecProvider,
+)
 
 ## megatron-core
 from megatron.core.models.gpt.gpt_layer_specs import (
     get_gpt_layer_local_spec,
-    get_gpt_layer_with_transformer_engine_spec,
     get_gpt_layer_with_inference_spec,
+    get_gpt_layer_with_transformer_engine_spec,
     get_gpt_mtp_block_spec,
     get_mlp_module_spec_for_backend,
-)
-
-from megatron.training import get_args, print_rank_0
-from megatron.training.arguments import core_transformer_config_from_args
-from megatron.core.fusions.fused_bias_dropout import get_bias_dropout_add
-from megatron.core.models.backends import (
-    BackendSpecProvider,
 )
 from megatron.core.transformer.attention import SelfAttention, SelfAttentionSubmodules
 from megatron.core.transformer.enums import AttnMaskType, LayerType
@@ -35,6 +34,8 @@ from megatron.core.transformer.transformer_layer import (
     TransformerLayerSubmodules,
     get_transformer_layer_offset,
 )
+from megatron.training import get_args, print_rank_0
+from megatron.training.arguments import core_transformer_config_from_args
 
 try:
     import transformer_engine as te  # pylint: disable=unused-import
@@ -72,8 +73,8 @@ except ImportError:
     HAVE_APEX = False
 
 # engram
-from .engram_transformer_layer import EngramTransformerLayer
 from .engram_model import EngramModel
+from .engram_transformer_layer import EngramTransformerLayer
 
 logger = logging.getLogger(__name__)
 
@@ -119,14 +120,14 @@ def _get_transformer_layer_spec(use_te, config):
 
 
 def get_engram_transformer_layer_spec(
-    num_experts: Optional[int] = None,
-    moe_grouped_gemm: Optional[bool] = False,
-    qk_layernorm: Optional[bool] = False,
-    multi_latent_attention: Optional[bool] = False,
-    fp8: Optional[str] = None,  # pylint: disable=unused-argument
-    moe_use_legacy_grouped_gemm: Optional[bool] = False,
-    qk_l2_norm: Optional[bool] = False,
-    use_te_op_fuser: Optional[bool] = False,
+    num_experts: int | None = None,
+    moe_grouped_gemm: bool | None = False,
+    qk_layernorm: bool | None = False,
+    multi_latent_attention: bool | None = False,
+    fp8: str | None = None,  # pylint: disable=unused-argument
+    moe_use_legacy_grouped_gemm: bool | None = False,
+    qk_l2_norm: bool | None = False,
+    use_te_op_fuser: bool | None = False,
     use_kitchen: bool = False,
     use_te_activation_func: bool = False,
 ) -> ModuleSpec:
@@ -231,12 +232,12 @@ def get_engram_transformer_layer_spec(
 def get_engram_decoder_block_spec(
     config: TransformerConfig,
     use_transformer_engine: bool,
-    normalization: Optional[str] = None,
-    qk_l2_norm: Optional[bool] = False,
-    vp_stage: Optional[int] = None,
-    pp_rank: Optional[int] = None,
-    is_dualpipev_first_chunk: Optional[bool] = False,
-    use_moe: Optional[bool] = False,
+    normalization: str | None = None,
+    qk_l2_norm: bool | None = False,
+    vp_stage: int | None = None,
+    pp_rank: int | None = None,
+    is_dualpipev_first_chunk: bool | None = False,
+    use_moe: bool | None = False,
 ) -> TransformerBlockSubmodules:
     """GPT block spec."""
     layer_norm_impl = TENorm
@@ -313,15 +314,22 @@ def get_engram_decoder_block_spec(
         if moe_layer_pattern[layer_number] == 1:
             layer_specs.append(moe_engram_layer_spec if is_engram_layer else moe_orig_layer_spec)
         elif moe_layer_pattern[layer_number] == 0:
-            layer_specs.append(dense_engram_layer_spec if is_engram_layer else dense_orig_layer_spec)
+            layer_specs.append(
+                dense_engram_layer_spec if is_engram_layer else dense_orig_layer_spec
+            )
         else:
             raise ValueError(f"Invalid layer pattern: {moe_layer_pattern}")
 
     # Slice the layer specs to only include the layers that are built in this pipeline stage.
     # Note: MCore layer_number starts at 1
     ######### FlagScale Modify ########
-    num_layers_to_build = get_num_layers_to_build(config, vp_stage=vp_stage, pp_rank=pp_rank, is_dualpipev_first_chunk=is_dualpipev_first_chunk)
-    
+    num_layers_to_build = get_num_layers_to_build(
+        config,
+        vp_stage=vp_stage,
+        pp_rank=pp_rank,
+        is_dualpipev_first_chunk=is_dualpipev_first_chunk,
+    )
+
     if config.pipeline_model_parallel_layout is not None:
         local_layer_specs = [
             layer_specs[layer_id]
@@ -331,7 +339,12 @@ def get_engram_decoder_block_spec(
         ]
     else:
         ######### FlagScale Modify ########
-        offset = get_transformer_layer_offset(config, vp_stage=vp_stage, pp_rank=pp_rank, is_dualpipev_first_chunk=is_dualpipev_first_chunk)
+        offset = get_transformer_layer_offset(
+            config,
+            vp_stage=vp_stage,
+            pp_rank=pp_rank,
+            is_dualpipev_first_chunk=is_dualpipev_first_chunk,
+        )
         local_layer_specs = layer_specs[offset : offset + num_layers_to_build]
 
     # Block spec.
@@ -343,10 +356,10 @@ def get_engram_decoder_block_spec(
 
 
 def engram_builder(args, pre_process, post_process, vp_stage=None, config=None, pg_collection=None):
-    print_rank_0('building Engram model ...')
+    print_rank_0("building Engram model ...")
 
     config = core_transformer_config_from_args(args)
-    
+
     assert not args.use_legacy_models, "Engram only supported in Mcore!"
     assert args.spec is None, "Engram only supported in Mcore!"
     use_te = args.transformer_impl == "transformer_engine"
@@ -362,7 +375,7 @@ def engram_builder(args, pre_process, post_process, vp_stage=None, config=None, 
         vp_stage=vp_stage,
         use_moe=use_moe,
     )
-    
+
     # do not support engram for mtp now
     mtp_block_spec = None
     if args.mtp_num_layers is not None:

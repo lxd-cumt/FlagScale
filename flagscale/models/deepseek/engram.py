@@ -1,58 +1,75 @@
 ## built-in
-import math
 import copy
+import math
 
 ## third-party
 import torch
 import torch.nn as nn
 
-## engram
-from .ngram_hash import NgramHashMapping
-from .multi_head_embedding import MultiHeadEmbedding
-from .short_conv import ShortConv
 from .engram_config import EngramConfig
+from .multi_head_embedding import MultiHeadEmbedding
+
+## engram
 from .ngram_hash import get_or_create_hash_mapping
+from .short_conv import ShortConv
 
 
 class Engram(nn.Module):
     def __init__(self, engram_cfg: EngramConfig, layer_id):
         super().__init__()
-        assert engram_cfg.engram_hc_mult == 1, "Engram do not support hyper-connection now, engram_hc_mult must be 1"
+        assert engram_cfg.engram_hc_mult == 1, (
+            "Engram do not support hyper-connection now, engram_hc_mult must be 1"
+        )
         self.engram_cfg = engram_cfg
         self.backbone_config = copy.deepcopy(engram_cfg)
 
         self.layer_id = layer_id
         global_hash_mapping = get_or_create_hash_mapping(
             engram_vocab_size=engram_cfg.engram_vocab_size,
-            max_ngram_size = engram_cfg.max_ngram_size,
-            n_embed_per_ngram = engram_cfg.n_embed_per_ngram,
-            n_head_per_ngram = engram_cfg.n_head_per_ngram,
-            layer_ids = engram_cfg.engram_layer_ids,
+            max_ngram_size=engram_cfg.max_ngram_size,
+            n_embed_per_ngram=engram_cfg.n_embed_per_ngram,
+            n_head_per_ngram=engram_cfg.n_head_per_ngram,
+            layer_ids=engram_cfg.engram_layer_ids,
             tokenizer_name_or_path=engram_cfg.engram_tokenizer_name_or_path,
-            pad_id = engram_cfg.engram_pad_id,
-            seed = engram_cfg.engram_seed,
+            pad_id=engram_cfg.engram_pad_id,
+            seed=engram_cfg.engram_seed,
         )
         self.multi_head_embedding = MultiHeadEmbedding(
             engram_cfg,
-            list_of_N = [x for y in global_hash_mapping.vocab_size_across_layers[self.layer_id] for x in y],
-            D = engram_cfg.n_embed_per_ngram // engram_cfg.n_head_per_ngram,
+            list_of_N=[
+                x for y in global_hash_mapping.vocab_size_across_layers[self.layer_id] for x in y
+            ],
+            D=engram_cfg.n_embed_per_ngram // engram_cfg.n_head_per_ngram,
         )
         self.short_conv = ShortConv(
-            hidden_size = self.backbone_config.hidden_size,
-            kernel_size = engram_cfg.engram_kernel_size,
-            dilation    = engram_cfg.max_ngram_size,
-            hc_mult     = self.backbone_config.engram_hc_mult,
+            hidden_size=self.backbone_config.hidden_size,
+            kernel_size=engram_cfg.engram_kernel_size,
+            dilation=engram_cfg.max_ngram_size,
+            hc_mult=self.backbone_config.engram_hc_mult,
         )
-        engram_hidden_size = (engram_cfg.max_ngram_size-1) * engram_cfg.n_embed_per_ngram
-        self.value_proj = nn.Linear(engram_hidden_size,self.backbone_config.hidden_size)
+        engram_hidden_size = (engram_cfg.max_ngram_size - 1) * engram_cfg.n_embed_per_ngram
+        self.value_proj = nn.Linear(engram_hidden_size, self.backbone_config.hidden_size)
         self.key_projs = nn.ModuleList(
-            [nn.Linear(engram_hidden_size,self.backbone_config.hidden_size) for _ in range(self.backbone_config.engram_hc_mult)]
+            [
+                nn.Linear(engram_hidden_size, self.backbone_config.hidden_size)
+                for _ in range(self.backbone_config.engram_hc_mult)
+            ]
         )
-        self.norm1 = nn.ModuleList([nn.RMSNorm(self.backbone_config.hidden_size) for _ in range(self.backbone_config.engram_hc_mult)])
-        self.norm2 = nn.ModuleList([nn.RMSNorm(self.backbone_config.hidden_size) for _ in range(self.backbone_config.engram_hc_mult)])
+        self.norm1 = nn.ModuleList(
+            [
+                nn.RMSNorm(self.backbone_config.hidden_size)
+                for _ in range(self.backbone_config.engram_hc_mult)
+            ]
+        )
+        self.norm2 = nn.ModuleList(
+            [
+                nn.RMSNorm(self.backbone_config.hidden_size)
+                for _ in range(self.backbone_config.engram_hc_mult)
+            ]
+        )
 
-    def forward(self,hidden_states,hash_input_ids):
-        f"""
+    def forward(self, hidden_states, hash_input_ids):
+        """
         # hidden_states: [L, B, HC_MULT, D]
         hidden_states: [L, B, D] # do not support hyper-connection now, hc_mult must be 1
         input_ids: [B, L]
@@ -77,7 +94,7 @@ class Engram(nn.Module):
             # [L/tp_size, B, HIDDEN_SIZE]
             normed_key = self.norm1[hc_idx](key)
 
-            query = hidden_states[:,:,hc_idx,:]
+            query = hidden_states[:, :, hc_idx, :]
             # [L, B, HIDDEN_SIZE]
             normed_query = self.norm2[hc_idx](query)
 
@@ -88,18 +105,18 @@ class Engram(nn.Module):
             gate = torch.sign(gate) * torch.sqrt(torch.abs(gate).clamp_min(1e-6))
             gate = torch.sigmoid(gate)
             # [L, B, 1]
-            
+
             gates.append(gate)
-        gates = torch.stack(gates,dim=2)
+        gates = torch.stack(gates, dim=2)
         # [L, B, HC_MULT, 1]
 
         value = gates * self.value_proj(embeddings).unsqueeze(2)
         # [L, B, HC_MULT, HIDDEN_SIZE]
         output = value + self.short_conv(value)
         # [L, B, HC_MULT, HIDDEN_SIZE]
-    
+
         # re-fake hyper-connection
         assert output.shape[2] == 1, "Engram do not support hyper-connection now, hc_mult must be 1"
         output = output.squeeze(2)
 
-        return output 
+        return output

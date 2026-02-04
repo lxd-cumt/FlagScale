@@ -5,10 +5,10 @@ import torch.nn as nn
 
 class ShortConv(nn.Module):
     def __init__(
-        self, 
-        hidden_size: int, 
-        kernel_size: int = 4, 
-        dilation: int = 1, 
+        self,
+        hidden_size: int,
+        kernel_size: int = 4,
+        dilation: int = 1,
         norm_eps: float = 1e-5,
         hc_mult: int = 4,
         activation: bool = True,
@@ -16,7 +16,7 @@ class ShortConv(nn.Module):
         super().__init__()
         self.hc_mult = hc_mult
         self.activation = activation
-        
+
         total_channels = hidden_size * hc_mult
         self.conv = nn.Conv1d(
             in_channels=total_channels,
@@ -28,11 +28,8 @@ class ShortConv(nn.Module):
             dilation=dilation,
         )
 
-        self.norms = nn.ModuleList([
-            nn.RMSNorm(hidden_size, eps=norm_eps) 
-            for _ in range(hc_mult)
-        ])
-        
+        self.norms = nn.ModuleList([nn.RMSNorm(hidden_size, eps=norm_eps) for _ in range(hc_mult)])
+
         if self.activation:
             self.act_fn = nn.SiLU()
 
@@ -43,14 +40,14 @@ class ShortConv(nn.Module):
         """
         T, B, G, C = x.shape
         x = x.permute(1, 0, 2, 3)  # (B, L, G, C)
-        
+
         assert G == self.hc_mult, f"Input groups {G} != hc_mult {self.hc_mult}"
 
         normed_chunks = []
         for i in range(G):
             chunk = x[:, :, i, :]
             normed_chunks.append(self.norms[i](chunk))
-        
+
         x_norm = torch.cat(normed_chunks, dim=-1)
         x_bct = x_norm.transpose(1, 2)
         y_bct = self.conv(x_bct)
