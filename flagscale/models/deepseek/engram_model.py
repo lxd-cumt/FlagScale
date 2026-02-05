@@ -1,5 +1,6 @@
 # ruff: noqa: RUF013
 ## built-in
+import torch
 from torch import Tensor
 
 from megatron.core.inference.contexts import BaseInferenceContext
@@ -12,6 +13,46 @@ from megatron.core.utils import deprecate_inference_params
 ## engram
 from .engram_transformer_layer import EngramTransformerBlock
 from .ngram_hash import get_or_create_hash_mapping
+
+
+class LazyHashInputIds:
+    """
+    Lazy wrapper for hash input IDs that computes asynchronously and
+    synchronizes only when accessed. This allows hash computation to overlap
+    with preprocessing and early decoder layers.
+    """
+
+    def __init__(self, hash_mapping, input_ids, hash_stream=None):
+        self.hash_mapping = hash_mapping
+        self.input_ids = input_ids
+        self.hash_stream = hash_stream
+        self._result = None
+        self._computation_started = False
+
+        # Start async computation immediately if stream is available
+        if self.hash_stream is not None:
+            with torch.cuda.stream(self.hash_stream):
+                self._result = self.hash_mapping.hash(self.input_ids)
+            self._computation_started = True
+
+    def __getitem__(self, key):
+        """Access hash result, synchronizing if necessary."""
+        if self._result is None:
+            if self.hash_stream is not None and self._computation_started:
+                # Wait for async computation to complete
+                torch.cuda.current_stream().wait_stream(self.hash_stream)
+                self._computation_started = False  # Mark as synchronized
+            else:
+                # Compute synchronously if no stream or computation not started
+                self._result = self.hash_mapping.hash(self.input_ids)
+        return self._result[key]
+
+    def get(self, key, default=None):
+        """Get hash result with default value."""
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
 
 class EngramModel(GPTModel):
@@ -42,6 +83,12 @@ class EngramModel(GPTModel):
             seed=self.config.engram_seed,
         )
 
+        # Optional: Create a separate CUDA stream for hash computation
+        # This allows overlapping hash computation with preprocessing
+        self._hash_stream = None
+        if torch.cuda.is_available():
+            self._hash_stream = torch.cuda.Stream()
+
     def forward(
         self,
         input_ids: Tensor,
@@ -60,6 +107,16 @@ class EngramModel(GPTModel):
         assert input_ids is not None, "Input ids can not be None for EngramModel"
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
+        # Create lazy hash input IDs that computes asynchronously
+        # The computation will start immediately in a separate stream (if available)
+        # but will only synchronize when actually accessed in the decoder
+        engram_hash_input_ids = LazyHashInputIds(
+            hash_mapping=self.engram_hash,
+            input_ids=input_ids,
+            hash_stream=self._hash_stream,
+        )
+
+        # Preprocessing can run in parallel with hash computation
         preproc_output = self._preprocess(
             input_ids=input_ids,
             position_ids=position_ids,
@@ -73,8 +130,6 @@ class EngramModel(GPTModel):
         )
 
         rotary_pos_cos_sin = preproc_output[5] if len(preproc_output) == 6 else None
-
-        engram_hash_input_ids = self.engram_hash.hash(input_ids)
 
         # Run decoder with engram
         hidden_states = self.decoder(
