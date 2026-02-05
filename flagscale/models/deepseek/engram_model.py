@@ -29,11 +29,13 @@ class LazyHashInputIds:
         self._result = None
         self._computation_started = False
 
+        # torch.cuda.nvtx.range_push("LazyHashInputIds hash")
         # Start async computation immediately if stream is available
         if self.hash_stream is not None:
             with torch.cuda.stream(self.hash_stream):
                 self._result = self.hash_mapping.hash(self.input_ids)
             self._computation_started = True
+        # torch.cuda.nvtx.range_pop()
 
     def __getitem__(self, key):
         """Access hash result, synchronizing if necessary."""
@@ -131,6 +133,7 @@ class EngramModel(GPTModel):
 
         rotary_pos_cos_sin = preproc_output[5] if len(preproc_output) == 6 else None
 
+        # torch.cuda.nvtx.range_push("EngramModel decoder")
         # Run decoder with engram
         hidden_states = self.decoder(
             input_ids=input_ids,
@@ -146,6 +149,7 @@ class EngramModel(GPTModel):
             sequence_len_offset=sequence_len_offset,
             **(extra_block_kwargs or {}),
         )
+        # torch.cuda.nvtx.range_pop()
 
         return self._postprocess(
             hidden_states=hidden_states,
