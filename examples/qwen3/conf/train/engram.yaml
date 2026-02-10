@@ -1,14 +1,14 @@
 system:
   no_shared_fs: ${experiment.runner.no_shared_fs}
   num_workers: 2
-  tensor_model_parallel_size: 8
+  tensor_model_parallel_size: 1
   pipeline_model_parallel_size: 1
   expert_model_parallel_size: 1
   context_parallel_size: 1
   sequence_parallel: true
   use_distributed_optimizer: true
-  # overlap_grad_reduce: true
-  # overlap_param_gather: true
+  overlap_grad_reduce: true
+  overlap_param_gather: true
   precision:
     bf16: true
     attention_softmax_in_fp32: true
@@ -50,7 +50,7 @@ model:
   attention_dropout: 0.0
   hidden_dropout: 0.0
   untie_embeddings_and_output_weights: true
-  no_position_embedding: true
+  position_embedding_type: rope
   no_rope_fusion: true
 
   # hf: attention_bias: true
@@ -75,12 +75,14 @@ model:
   # training
   seed: ${experiment.seed}
   finetune: false
-  micro_batch_size: 1
   # to be update
-  global_batch_size: 128 #2048
+  micro_batch_size: 1
+  # hf: gbs: 1024
+  global_batch_size: 128
+  # hf: max_steps: 24000
+  train_iters: 102400
   eval_iters: 0
-  # train_iters: 102400
-  train-samples: 24576000
+
 
   optimizer:
     clip_grad: 1.0
@@ -90,7 +92,7 @@ model:
     lr_scheduler:
       lr: 3.0e-4
       min_lr: 3.0e-4
-      # lr_warmup_fraction: 0.1
+      # lr_warmup_fraction: 0.01
       lr_warmup_iters: 240
       lr_decay_style: WSD
       lr_wsd_decay_style: cosine
@@ -99,11 +101,12 @@ model:
 data:
   reset_position_ids: True
   reset_attention_mask: True
-  data_path: /path
+  data_path: /share/project/lizhiyu/hetero_data/HQ_wo_fim/Nemotron-CC-high-actual-actual-high_text_document
   split: 1
   no_mmap_bin_files: true
   tokenizer:
-    tokenizer_type: QwenTokenizerFS
+    legacy_tokenizer: true
+    tokenizer_type: Qwen2TokenizerFS
     tokenizer_path: tokenizers/Qwen/Qwen2.5-7B-Instruct
     vocab_size: 151936
     make_vocab_size_divisible_by: 64

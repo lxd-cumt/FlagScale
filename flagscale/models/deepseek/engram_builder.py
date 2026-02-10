@@ -10,12 +10,14 @@ from megatron.core.models.backends import (
 
 ## megatron-core
 from megatron.core.models.gpt.gpt_layer_specs import (
+    get_gpt_decoder_block_spec,
     get_gpt_layer_local_spec,
     get_gpt_layer_with_inference_spec,
     get_gpt_layer_with_transformer_engine_spec,
     get_gpt_mtp_block_spec,
     get_mlp_module_spec_for_backend,
 )
+from megatron.core.models.gpt.gpt_model import GPTModel
 from megatron.core.transformer.attention import SelfAttention, SelfAttentionSubmodules
 from megatron.core.transformer.enums import AttnMaskType, LayerType
 from megatron.core.transformer.identity_op import IdentityOp
@@ -364,16 +366,27 @@ def engram_builder(args, pre_process, post_process, vp_stage=None, config=None, 
     assert args.spec is None, "Engram only supported in Mcore!"
     use_te = args.transformer_impl == "transformer_engine"
     assert use_te, "Engram only supported in Transformer Engine!"
-
     use_moe = True if args.num_experts else False
+
     # Define the decoder block spec
-    transformer_layer_spec = get_engram_decoder_block_spec(
-        config,
-        use_transformer_engine=use_te,
-        normalization=args.normalization,
-        qk_l2_norm=args.qk_l2_norm,
-        vp_stage=vp_stage,
-        use_moe=use_moe,
+    if args.use_engram:
+        decoder_func = get_engram_decoder_block_spec
+    else:
+        decoder_func = get_gpt_decoder_block_spec
+
+    decoder_kwargs = {
+        "config": config,
+        "use_transformer_engine": use_te,
+        "normalization": args.normalization,
+        "qk_l2_norm": args.qk_l2_norm,
+        "vp_stage": vp_stage,
+    }
+
+    if args.use_engram:
+        decoder_kwargs["use_moe"] = use_moe
+
+    transformer_layer_spec = decoder_func(
+        **decoder_kwargs,
     )
 
     # do not support engram for mtp now
@@ -388,7 +401,13 @@ def engram_builder(args, pre_process, post_process, vp_stage=None, config=None, 
             vp_stage=vp_stage,
         )
 
-    model = EngramModel(
+    if args.use_engram:
+        model_class = EngramModel
+    else:
+        model_class = GPTModel
+
+    print(f"init model, args.padded_vocab_size: {args.padded_vocab_size}")
+    model = model_class(
         config=config,
         transformer_layer_spec=transformer_layer_spec,
         vocab_size=args.padded_vocab_size,

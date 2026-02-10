@@ -1,8 +1,9 @@
 ## third-party
 import torch
 from sympy import isprime
-from tokenizers import Regex, normalizers
 from transformers import AutoTokenizer
+
+from tokenizers import Regex, normalizers
 
 _HASH_MAPPING_CACHE = {}
 
@@ -77,7 +78,12 @@ class CompressedTokenizer:
         key2new = {}
         new_tokens = []
 
-        vocab_size = len(self.tokenizer)
+        from megatron.training import get_args
+
+        args = get_args()
+        vocab_size = args.vocab_size
+        print(f"CompressedTokenizer: vocab_size: {vocab_size}")
+        # vocab_size = len(self.tokenizer)
         for tid in range(vocab_size):
             text = self.tokenizer.decode([tid], skip_special_tokens=False)
 
@@ -104,16 +110,14 @@ class CompressedTokenizer:
 
     def _compress(self, input_ids):
         x = input_ids.to(dtype=torch.long)
-        pos_mask = x >= 0
+        if self.lookup_table.device != x.device:
+            self.lookup_table = self.lookup_table.to(x.device)
 
+        vocab_size = len(self.lookup_table)
+        pos_mask = (x >= 0) & (x < vocab_size)
         # # cut here to reduce device-to-host memcpy
         # if not pos_mask.any():
         #     return x
-
-        device = x.device
-        if self.lookup_table.device != device:
-            self.lookup_table = self.lookup_table.to(device)
-
         out = x.clone()
         valid_ids = out[pos_mask]
         mapped = self.lookup_table[valid_ids]
