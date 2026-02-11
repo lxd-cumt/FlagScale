@@ -54,8 +54,8 @@ model:
   no_rope_fusion: true
 
   # hf: attention_bias: true
-  disable_bias_linear: false
-  add_qkv_bias: true
+  disable_bias_linear: true
+  add_qkv_bias: false
 
   # engram args =================
   use_engram: true
