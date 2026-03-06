@@ -1,8 +1,10 @@
 import os
+import sys
 import warnings
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
+from omegaconf.errors import OmegaConfBaseException
 
 from flagscale.logger import logger
 from flagscale.runner.autotuner_factory import AutotunerFactory
@@ -125,6 +127,32 @@ def execute_action(runner, action: str, task_type: str, config: DictConfig) -> N
 
 @hydra.main(version_base=None, config_name="config")
 def main(config: DictConfig) -> None:
+    # Restore the user's original working directory.
+    # Hydra defaults to hydra.job.chdir=True, which changes cwd to a run-specific
+    # output dir (e.g. outputs/2024-01-01/12-00-00/).  This breaks all relative
+    # paths in configs (tokenizer files, data paths, hostfiles, entrypoints, etc.).
+    # FlagScale manages output directories explicitly (exp_dir, log_dir, etc.),
+    # so the cwd change provides no benefit.  Restoring cwd here is equivalent to
+    # hydra.job.chdir=False but works for all invocation paths (CLI, direct python,
+    # tests) without requiring Hydra config file changes.
+    os.chdir(hydra.utils.get_original_cwd())
+
+    try:
+        _main(config)
+    except OmegaConfBaseException as e:
+        logger.error(f"Config validation error: {e}")
+        try:
+            config_yaml = OmegaConf.to_yaml(config, resolve=False)
+        except Exception:
+            config_yaml = repr(config)
+        logger.error(f"Config content:\n{config_yaml}")
+        raise SystemExit(
+            f"Config error: {e}\nHint: Check your YAML config files for missing or invalid fields."
+        ) from e
+
+
+def _main(config: DictConfig) -> None:
+    """Core logic, separated from main() for error wrapping."""
     check_and_reset_deploy_config(config)
 
     task_type = config.experiment.task.get("type", None)
@@ -138,8 +166,26 @@ def main(config: DictConfig) -> None:
 
     runner = get_runner(config, task_type)
     execute_action(runner, action, task_type, config)
-    return
+
+
+def resolve_config_path_in_argv():
+    """Convert relative --config-path in sys.argv to an absolute path.
+
+    Hydra interprets a relative config_path as relative to the calling
+    module's package directory, not the current working directory.
+    Converting to an absolute path ensures it is treated as a filesystem path.
+    """
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--config-path="):
+            path = arg[len("--config-path=") :]
+            if not os.path.isabs(path):
+                sys.argv[i] = f"--config-path={os.path.abspath(path)}"
+        elif arg == "--config-path" and i + 1 < len(sys.argv):
+            path = sys.argv[i + 1]
+            if not os.path.isabs(path):
+                sys.argv[i + 1] = os.path.abspath(path)
 
 
 if __name__ == "__main__":
+    resolve_config_path_in_argv()
     main()
