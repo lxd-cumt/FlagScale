@@ -30,7 +30,7 @@ def get_hf_model(dtype, model_path=None, config=None):
 
 
 def get_mg_model(dtype, pre_process, post_process):
-    from flagscale.models.deepseek.engram_builder import engram_builder
+    from flagscale.models.megatron.engram.engram_builder import engram_builder
     from flagscale.train.megatron.model_provider import model_provider
 
     s_time = time.time()

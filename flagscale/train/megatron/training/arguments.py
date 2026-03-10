@@ -1286,7 +1286,7 @@ def core_transformer_config_from_args(args, config_class=None):
         config_class = HeterogeneousTransformerConfig
 
     if args.use_engram:
-        from flagscale.models.deepseek.engram_config import EngramConfig
+        from flagscale.models.megatron.engram.engram_config import EngramConfig
         config_class = EngramConfig
 
     # Translate args to core transformer configuration

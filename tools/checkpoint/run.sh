@@ -125,8 +125,8 @@ python convert.py \
     --model-type qwen3_engram \
     --loader mcore \
     --saver transformers \
-    --load-dir /share/project/lixianduo/ds_rep/Qwen3-Engram/checkpoints \
-    --save-dir /share/project/lixianduo/ds_rep/Qwen3-Engram/hf_checkpoints \
+    --load-dir $loaddir \
+    --save-dir $outputs \
     --target-tensor-parallel-size 1 \
     --target-pipeline-parallel-size 1 \
     --target-expert-parallel-size 1 \
