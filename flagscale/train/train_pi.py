@@ -619,23 +619,23 @@ def main(config: TrainConfig, seed: int):
     )
 
     # Convert optimizer_betas to tuple if it's a list
-    optimizer_betas = config.system.optimizer.betas
+    optimizer_betas = config.model.optimizer.betas
     if isinstance(optimizer_betas, list):
         optimizer_betas = tuple(optimizer_betas)
 
     # TODO: (yupu) Should we let the user choose between config and policy preset?
     optimizer = torch.optim.AdamW(
         policy.parameters(),
-        lr=config.system.optimizer.lr,
+        lr=config.model.optimizer.lr,
         betas=optimizer_betas,
-        eps=config.system.optimizer.eps,
-        weight_decay=config.system.optimizer.weight_decay,
+        eps=config.model.optimizer.eps,
+        weight_decay=config.model.optimizer.weight_decay,
     )
     scheduler_config = CosineDecayWithWarmupSchedulerConfig(
-        num_warmup_steps=config.system.scheduler.warmup_steps,
-        num_decay_steps=config.system.scheduler.decay_steps,
-        peak_lr=config.system.optimizer.lr,
-        decay_lr=config.system.scheduler.decay_lr,
+        num_warmup_steps=config.model.optimizer.scheduler.warmup_steps,
+        num_decay_steps=config.model.optimizer.scheduler.decay_steps,
+        peak_lr=config.model.optimizer.lr,
+        decay_lr=config.model.optimizer.scheduler.decay_lr,
     )
     lr_scheduler = scheduler_config.build(optimizer, config.system.train_steps)
 
@@ -778,8 +778,7 @@ if __name__ == "__main__":
     config = OmegaConf.load(config_file_path)
 
     # Extract train config and convert to Pydantic TrainConfig
-    train_config_dict = OmegaConf.to_container(config.train, resolve=True)
-    train_config = TrainConfig(**train_config_dict)
+    train_config = TrainConfig.from_hydra_config(config)
 
     # Extract experiment config (seed, exp_dir, etc.)
     experiment_config = OmegaConf.to_container(config.experiment, resolve=True)
