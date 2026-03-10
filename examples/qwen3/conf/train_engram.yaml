@@ -7,7 +7,7 @@ experiment:
   seed: 42
   save_steps: 50
   load: None
-  exp_dir: /share/project/lixianduo/ds_rep/${experiment.exp_name}
+  exp_dir: /share/project/lixianduo/scale_gems_cx/${experiment.exp_name}
   ckpt_format: torch
   task:
     type: train
@@ -17,8 +17,8 @@ experiment:
     per_node_task: false
     no_shared_fs: false
     rdzv_backend: static
-    hostfile: /share/project/lixianduo/ds_rep/host_single
-    ssh_port: 7898
+    hostfile: /share/project/lixianduo/scale_gems_cx/host_single
+    ssh_port: 7878
   cmds:
     before_start: ulimit -n 1048576 && source /root/miniconda3/bin/activate /share/project/lixianduo/envs/flagscale-train-copy
   envs:
