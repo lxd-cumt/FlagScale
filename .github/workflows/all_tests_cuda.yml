@@ -2,7 +2,7 @@ name: cuda_tests
 
 on:
   push:
-    branches: ["fl"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
 
