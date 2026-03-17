@@ -22,7 +22,7 @@ def test_set_cuda_rng_state(tensor_model_parallel_size):
     size = 123
     seed = 1234
     cur_platform.manual_seed(1234)
-    tensor = torch.tensor(size, dtype=torch.float, device=cur_platform.device())
+    tensor = torch.tensor(size, dtype=torch.float, device=cur_platform.device_name())
 
     # Get the state
     rng_state = cur_platform.get_rng_state()
@@ -84,7 +84,7 @@ def test_cuda_rng_tracker(tensor_model_parallel_size):
     seed_1 = 1234
     seed_2 = 4321
     size = [12, 21]
-    tensor = torch.tensor(size, dtype=torch.float, device=cur_platform.device())
+    tensor = torch.tensor(size, dtype=torch.float, device=cur_platform.device_name())
 
     # Set to seed_1 and generate two tensors.
     cur_platform.manual_seed(seed_1)

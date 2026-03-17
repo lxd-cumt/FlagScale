@@ -302,8 +302,8 @@ def test_masked_softmax_forward():
     scale_t = torch.tensor([1.0])
     for qlen in [128, 256, 1024, 2048, 4096]:
         for klen in [128, 256, 1024, 2048]:
-            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device(0))
-            masks = torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device(0))
+            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device_name(0))
+            masks = torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device_name(0))
             softmax_results = scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0].item())
             softmax_results_torch = forward_torch_softmax(inputs, masks, scale_t[0].item())
             error = (softmax_results_torch - softmax_results).abs().max()
@@ -317,9 +317,9 @@ def test_masked_softmax_backward():
     scale_t = torch.tensor([1.0])
     for qlen in [128, 256, 1024, 2048, 4096]:
         for klen in [128, 256, 1024, 2048]:
-            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device(0))
-            backward = torch.rand_like(inputs, dtype=torch.float16, device=cur_platform.device(0))
-            masks = torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device(0))
+            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device_name(0))
+            backward = torch.rand_like(inputs, dtype=torch.float16, device=cur_platform.device_name(0))
+            masks = torch.randint(0, 2, (batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device_name(0))
             softmax_results = scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0].item())
             back_grad = scaled_masked_softmax_cuda.backward(backward, softmax_results, scale_t[0].item())
 
@@ -338,8 +338,8 @@ def test_allmasked_softmax_forward():
     scale_t = torch.tensor([1.0])
     for qlen in [128, 256, 1024, 2048, 4096]:
         for klen in [128, 256, 1024, 2048]:
-            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device(0))
-            masks = torch.ones((batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device(0))
+            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device_name(0))
+            masks = torch.ones((batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device_name(0))
             softmax_results = scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0].item())
             softmax_results_torch = torch.zeros_like(inputs)
             error = (softmax_results_torch - softmax_results).abs().max()
@@ -354,9 +354,9 @@ def test_allmasked_softmax_backward():
     scale_t = torch.tensor([1.0])
     for qlen in [128, 256, 1024, 2048, 4096]:
         for klen in [128, 256, 1024, 2048]:
-            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device(0))
-            backward = torch.rand_like(inputs, dtype=torch.float16, device=cur_platform.device(0))
-            masks = torch.ones((batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device(0))
+            inputs = torch.normal(0, 2, (batch, attn, qlen, klen), dtype=torch.float16, device=cur_platform.device_name(0))
+            backward = torch.rand_like(inputs, dtype=torch.float16, device=cur_platform.device_name(0))
+            masks = torch.ones((batch, 1, qlen, klen), dtype=torch.bool, device=cur_platform.device_name(0))
             softmax_results = scaled_masked_softmax_cuda.forward(inputs, masks, scale_t[0].item())
             back_grad = scaled_masked_softmax_cuda.backward(backward, softmax_results, scale_t[0].item())
             inputs.requires_grad = True
