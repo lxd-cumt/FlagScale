@@ -230,6 +230,13 @@ class SshLauncher(LauncherBase):
                     if os.path.basename(str(nsys_bin_path)) == "nsys"
                     else os.path.join(str(nsys_bin_path), "nsys")
                 )
+                # If a directory is provided, write a per-host report file under it.
+                # Keep `$HOSTNAME` unexpanded so the remote shell expands it.
+                rep_path = str(nsys_rep_file_path)
+                if rep_path.endswith("/") or (
+                    ".nsys-rep" not in rep_path and "$HOSTNAME" not in rep_path
+                ):
+                    rep_path = rep_path.rstrip("/") + "/$HOSTNAME.nsys-rep"
                 nsys_cmd = [
                     nsys_exe,
                     "profile",
@@ -238,7 +245,7 @@ class SshLauncher(LauncherBase):
                     "-t",
                     "nvtx,cuda,osrt",
                     "-o",
-                    str(nsys_rep_file_path),
+                    rep_path,
                     "--force-overwrite",
                     "true",
                     "--capture-range=cudaProfilerApi",
