@@ -109,6 +109,11 @@ def _get_runner_cmd_train(
         del runner_args["enable_monitoring"]
     if "enable_gpu_health_check" in runner_args:
         del runner_args["enable_gpu_health_check"]
+    # Profiling options are consumed by launcher; torchrun doesn't accept them.
+    if "nsys_bin_path" in runner_args:
+        del runner_args["nsys_bin_path"]
+    if "nsys_rep_file_path" in runner_args:
+        del runner_args["nsys_rep_file_path"]
     if "deploy" in runner_args:
         del runner_args["deploy"]
     runner_args["rdzv_id"] = rdzv_id
