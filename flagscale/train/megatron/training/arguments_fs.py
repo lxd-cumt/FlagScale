@@ -716,8 +716,6 @@ def _add_regularization_args(parser):
 
     group.add_argument('--muon-matched-adamw-rms', type=float, default=0.2,
                        help="The RMS of the matched AdamW's, typically 0.2 ~ 0.4")
-    group.add_argument('--muon-momentum', type=float, default=0.95,
-                       help='Momentum beta for muon')
     group.add_argument('--muon-ns-steps', type=int, default=5,
                        help='Number of Newton-Schultz iteartion steps for muon')
     group.add_argument('--no-muon-nesterov', action='store_false',
@@ -839,6 +837,18 @@ def _add_engram_args(parser):
     return parser
 
 
+def _add_flagscale_specific_args(parser):
+    """Add FlagScale-specific arguments that don't fit in other categories."""
+    group = parser.add_argument_group(title='flagscale specific')
+
+    # Inference args (not in any upstream dataclass config)
+    group.add_argument('--inference-wandb-logging-step-interval', type=int, default=0,
+                       help='Step interval for logging inference metrics to wandb. '
+                            'Default to 0 to disable inference wandb logging.')
+
+    return parser
+
+
 def add_flagscale_arguments(parser):
     """
     Add all FlagScale-specific arguments to a Megatron parser.
@@ -863,4 +873,5 @@ def add_flagscale_arguments(parser):
     parser = _add_regularization_args(parser)
     parser = _add_flagos_args(parser)
     parser = _add_engram_args(parser)
+    parser = _add_flagscale_specific_args(parser)
     return parser

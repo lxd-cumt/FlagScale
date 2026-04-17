@@ -30,7 +30,6 @@ from megatron.core.utils import (
 )
 from megatron.core.activations import squared_relu
 from megatron.core.fusions.fused_bias_geglu import quick_gelu
-from megatron.training.dist_signal_handler import SIGNAL_MAP
 from megatron.training.utils import (
     get_device_arch_version,
     update_use_dist_ckpt,
@@ -43,12 +42,12 @@ from megatron.core.quantization.utils import (
     kitchen_quantization_recipe_config,
     load_quantization_recipe,
 )
+
+from megatron.training.argument_utils import ArgumentGroupFactory
 from megatron.training.arguments_fs import add_flagscale_arguments
 
 from megatron.plugin.platform import get_platform
 cur_platform = get_platform()
-
-from megatron.training.argument_utils import ArgumentGroupFactory
 
 def add_megatron_arguments(parser: argparse.ArgumentParser):
     """"Add Megatron-LM arguments to the given parser."""
@@ -298,13 +297,6 @@ def tuple_type(x):
 
 def validate_args(args, defaults={}):
 
-    # FlagScale begin
-    enable_hetero = defaults.get("enable_hetero", False)
-    standalone_embedding_stage = defaults.get("standalone_embedding_stage", False)
-    multiple_of = defaults.get("multiple_of", None)
-    hidden_dim_multiplier = defaults.get("hidden_dim_multiplier", None)
-
-
     # Temporary
     assert args.non_persistent_ckpt_type in ['global', 'local', None], \
         'Currently only global and local checkpoints are supported'
@@ -324,11 +316,23 @@ def validate_args(args, defaults={}):
             "legacy model format only supports the 'torch' checkpoint format."
     update_use_dist_ckpt(args)
 
-    if args.attention_backend == AttnBackend.local:
-        assert args.spec[0] == 'local' , '--attention-backend local is only supported with --spec local'
-    
+    # FlagScale begin
+    enable_hetero = defaults.get("enable_hetero", False)
+    standalone_embedding_stage = defaults.get("standalone_embedding_stage", False)
+    multiple_of = defaults.get("multiple_of", None)
+    hidden_dim_multiplier = defaults.get("hidden_dim_multiplier", None)
+
+
     if not enable_hetero:
         total_model_size = args.tensor_model_parallel_size * args.pipeline_model_parallel_size * args.context_parallel_size
+
+        # Total model size.
+        assert args.world_size % total_model_size == 0, (
+            f"world size ({args.world_size}) is not divisible by total_model_size ({total_model_size=})"
+        )
+
+    if args.attention_backend == AttnBackend.local:
+        assert args.spec[0] == 'local' , '--attention-backend local is only supported with --spec local'
 
     # Pipeline model parallel size.
     args.transformer_pipeline_model_parallel_size = args.pipeline_model_parallel_size
@@ -408,8 +412,6 @@ def validate_args(args, defaults={}):
                      args.pipeline_model_parallel_size))
 
     # Checks.
-    if args.expert_tensor_parallel_size is None:
-        args.expert_tensor_parallel_size = args.tensor_model_parallel_size
 
     if args.hierarchical_context_parallel_sizes:
         from numpy import prod
@@ -418,6 +420,8 @@ def validate_args(args, defaults={}):
         assert args.hierarchical_context_parallel_sizes is not None, \
         "--hierarchical-context-parallel-sizes must be set when a2a+p2p is used in cp comm"
 
+    if args.expert_tensor_parallel_size is None:
+        args.expert_tensor_parallel_size = args.tensor_model_parallel_size
 
     # Deprecated arguments.
     assert args.batch_size is None, '--batch-size argument is no longer ' \
@@ -580,7 +584,8 @@ def validate_args(args, defaults={}):
                 if enable_hetero is False:
                     assert num_layers % args.transformer_pipeline_model_parallel_size == 0, \
                         'Number of layers should be divisible by the pipeline-model-parallel size'
-    
+
+
     if args.virtual_pipeline_model_parallel_size is not None:
         if args.overlap_p2p_comm:
             assert args.pipeline_model_parallel_size > 1, \
@@ -1420,65 +1425,15 @@ def core_transformer_config_from_args(args, config_class=None):
 def _add_transformer_engine_args(parser):
     group = parser.add_argument_group(title='Transformer-Engine')
 
-    group.add_argument('--fp8-format', default=None,
-                       choices=['e4m3', 'hybrid'],
-                       help='Which fp8 format scheme to use for FP8 tensors in the forward and backward pass',
-                       dest='fp8')
-    # per tensor current scaling recipe selection
-    group.add_argument('--fp8-recipe', default='delayed',
-                       choices=['tensorwise', 'delayed', 'mxfp8', 'blockwise', 'custom'],
-                       help='Which fp8 recipe to use for FP8 tensors in the forward and backward pass',
-                       dest='fp8_recipe')
-    group.add_argument('--fp8-quantizer-factory', default=None,
-                       help='Python import path to a callable quantizer factory, '
-                            'e.g., package.module.quantizer_factory.',
-                       dest='fp8_quantizer_factory')
     # delayed scaling only configs
-    group.add_argument('--fp8-margin', type=int, default=0,
-                       help='Scaling margin for fp8',
-                       dest='fp8_margin')
-    group.add_argument('--fp8-interval', type=int, default=1,
-                       help='DEPRECATED. This flag is ignored. Scaling update interval for fp8',
-                       dest='fp8_interval')
-    group.add_argument('--fp8-amax-history-len', type=int, default=1,
-                       help='Number of steps for which amax history is recorded per tensor',
-                       dest='fp8_amax_history_len')
-    group.add_argument('--fp8-amax-compute-algo', default='most_recent',
-                       choices=['most_recent', 'max'],
-                       help='Algorithm for computing amax from history',
-                       dest='fp8_amax_compute_algo')
-    group.add_argument('--no-fp8-wgrad', action='store_false',
-                       help='Execute wgrad in higher precision even for FP8 runs',
-                       dest='fp8_wgrad')
-    group.add_argument('--transformer-impl', default='transformer_engine',
-                       choices=['local', 'transformer_engine', 'inference_optimized'],
-                       help='Which Transformer implementation to use.')
     group.add_argument('--fp8-param-gather', action='store_true',
                        help='Keep the compute param in fp8 (do not use any other intermediate '
                             'dtype) and perform the param all-gather in fp8.')
 
     # FP4 related arguments
-    group.add_argument('--fp4-format', default=None,
-                       choices=['e2m1'],
-                       help='Which nvfp4 format scheme to use for FP4 tensors in the forward and backward pass',
-                       dest='fp4')
-    group.add_argument('--fp4-recipe', default='nvfp4',
-                       choices=['nvfp4', 'custom'],
-                       help='Which fp4 recipe to use for FP4 tensors in the forward and backward pass',
-                       dest='fp4_recipe')
-    group.add_argument('--fp4-quantizer-factory', default=None,
-                       help='Python import path to a callable quantizer factory, '
-                            'e.g., package.module.quantizer_factory.',
-                       dest='fp4_quantizer_factory')
-    group.add_argument('--fp4-param-gather', action='store_true',
-                       help='Keep the compute param in fp4 (do not use any other intermediate '
-                            'dtype) and perform the param all-gather in fp4.',
-                       dest='fp4_param')
-    group.add_argument('--te-rng-tracker', action='store_true', default=False,
-                       help='Use the Transformer Engine version of the random number generator. '
-                            'Required for CUDA graphs support.')
-    group.add_argument('--inference-rng-tracker', action='store_true', default=False,
-                       help='Use a random number generator configured for inference.')
+    group.add_argument('--te-precision-config-file', default=None,
+                       help='Configuration file to select per-module precision overrides. '
+                       'See TransformerEngineMixedPrecision.md')
     return parser
 
 def _add_inference_args(parser):
@@ -1578,7 +1533,7 @@ def _add_inference_args(parser):
                        action='store_true', default=False,
                        help='Only use cuda graphs for decode-only steps, not prefill and mixed steps.')
     group.add_argument('--inference-dynamic-batching-unified-memory-level',
-                       type=int, default=1, choices=[0, 1],
+                       type=int, default=0, choices=[0, 1],
                        help='Set unified memory usage within the dynamic '
                        'inference context. The levels are: 0) no unified memory, '
                        '1) allocate `memory_buffer` in unified memory. '
@@ -1606,60 +1561,6 @@ def _add_inference_args(parser):
                        required=False, default=False, help='Enable inference wandb logging.')
     group.add_argument("--inference-coordinator-port", type=int, default=12346,
                        help="This port will be used to setup the inference coordinator on node-0")
-
-    group.add_argument('--inference-wandb-logging-step-interval', type=int, default=0,
-                       help='Step interval for logging inference metrics to wandb. '
-                            'Default to 0 to disable inference wandb logging.')
-    group.add_argument("--inference-coordinator-port", type=int, default=12346,
-                       help="This port will be used to setup the inference coordinator on node-0")
-    return parser
-
-
-def _add_retro_args(parser):
-    group = parser.add_argument_group(title='retro')
-
-    group.add_argument('--retro-project-dir', default=None,
-                       help='Retro project directory, which contains the '
-                       'preprocessed data for pretraining. This directory '
-                       'is built during preprocessing (see '
-                       'tools/retro/README.md), and contains subdirectories '
-                       'for the chunk database and pretraining neighbors.')
-    group.add_argument('--retro-add-retriever',
-                       action='store_true', default=False,
-                       help='Add a retriever to the transformer, for use in '
-                       'pretraining a Retro model.')
-    group.add_argument('--retro-cyclic-train-iters', type=int, default=None,
-                       help='Set number of training iterations for cyclic '
-                       'Retro training.')
-    group.add_argument('--retro-encoder-layers', type=int, default=2,
-                       help='Number of layers to use for the retrieval '
-                       'encoder.')
-    group.add_argument('--retro-encoder-hidden-dropout',
-                       type=float, default=0.1, help='Hidden dropout for '
-                       'retrieval encoder.')
-    group.add_argument('--retro-encoder-attention-dropout',
-                       type=float, default=0.1, help='Attention dropout for '
-                       'retrieval encoder.')
-    group.add_argument("--retro-num-neighbors", type=int, default=2,
-                       help='Number of neighbors to retrieve during '
-                       'pretraining.')
-    group.add_argument("--retro-num-retrieved-chunks", type=int, default=2,
-                       help='Number of chunks to retrieve from the retrieval '
-                       'database.')
-    group.add_argument("--retro-attention-gate", type=float, default=1,
-                       help="Gated cross attention.")
-    group.add_argument("--retro-no-verify-neighbor-count", action="store_false",
-                       dest="retro_verify_neighbor_count",
-                       help="Skip verifying that len(GPT dataset) == len(saved "
-                       "neighbors).")
-
-    # Enforce argument naming convention.
-    for action in group._group_actions:
-        prefix = action.dest.split("_")[0]
-        assert prefix == "retro", \
-            "Retro args must be prefixed with '--retro-*', for consistent " \
-            "styling. Please fix '%s'." % ", ".join(action.option_strings)
-
     return parser
 
 
@@ -2145,56 +2046,6 @@ def _add_training_args(parser):
     group.add_argument('--check-for-large-grads', action='store_true',
                        help='Check for unexpectedly large grads',
                        dest='check_for_large_grads')
-    group.add_argument('--distribute-saved-activations',
-                       action='store_true',
-                       help='If set, distribute recomputed activations '
-                       'across model parallel group.')
-    group.add_argument('--recompute-method', type=str, default=None,
-                       choices=['uniform', 'block'],
-                       help='1) uniform: uniformly divide the total number of '
-                       'Transformer layers and recompute the input activation of '
-                       'each divided chunk at specified granularity, '
-                       '2) recompute the input activations of only a set number of '
-                       'individual Transformer layers per pipeline stage and do the '
-                       'rest without any recomputing at specified granularity'
-                       'default) do not apply activations recompute to any layers')
-    group.add_argument('--recompute-num-layers', type=int, default=None,
-                       help='1) uniform: the number of Transformer layers in each '
-                       'uniformly divided recompute unit, '
-                       '2) block: the number of individual Transformer layers '
-                       'to recompute within each pipeline stage.')
-    group.add_argument('--recompute-modules', nargs='*', type=str, default=None,
-                       help='The submodules to recompute. '
-                       'choices: "core_attn", "moe_act", "layernorm", "mla_up_proj", '
-                       '         "mlp", "moe", "shared_experts". '
-                       'default: ["core_attn"].'
-                       '"core_attn": recompute the core attention part of the transformer layer. '
-                       '"moe_act": recompute the MoE MLP activation function. '
-                       '"layernorm": recompute the input_layernorm and pre_mlp_layernorm. '
-                       '"mla_up_proj": recompute the MLA up projection and RoPE applying parts.'
-                       '"mlp": recompute the dense MLP layer.'
-                       '"moe": recompute the MoE layer.'
-                       '"shared_experts": recompute the shared experts in the MoE layer.'
-                       '"moe_act", "layernorm", and "mla_up_proj" use output-discarding checkpointing, '
-                       '"core_attn", "mlp", "moe", and "shared_experts" use normal checkpointing.')
-    group.add_argument('--cpu-offloading-num-layers', type=int, default=0,
-                       help='The number of Transformer layers to offload to CPU.')
-    group.add_argument('--no-clone-scatter-output-in-embedding', action='store_false',
-                       help='If not set, clone the output of the scatter in embedding layer to GC original tensor.',
-                       dest='clone_scatter_output_in_embedding')
-    group.add_argument('--profile', action='store_true',
-                       help='Enable nsys profiling. When using this option, nsys '
-                       'options should be specified in commandline. An example '
-                       'nsys commandline is `nsys profile -s none -t nvtx,cuda '
-                       '-o <path/to/output_file> --force-overwrite true '
-                       '--capture-range=cudaProfilerApi '
-                       '--capture-range-end=stop`.')
-    group.add_argument('--profile-step-start', type=int, default=10,
-                       help='Global step to start profiling.')
-    group.add_argument('--profile-step-end', type=int, default=12,
-                       help='Global step to stop profiling.')
-    group.add_argument('--iterations-to-skip', nargs='+', type=int, default=[],
-                       help='List of iterations to skip, empty by default.')
     group.add_argument('--result-rejected-tracker-filename', type=str, default=None,
                        help='Optional name of file tracking `result_rejected` events.')
     group.add_argument('--disable-gloo-process-groups', action='store_false',
@@ -2207,29 +2058,6 @@ def _add_training_args(parser):
     group.add_argument('--checkpoint-activations', action='store_true',
                        help='Checkpoint activation to allow for training '
                        'with larger models, sequences, and batch sizes.')
-    group.add_argument('--train-iters', type=int, default=None,
-                       help='Total number of iterations to train over all '
-                       'training runs. Note that either train-iters or '
-                       'train-samples should be provided.')
-    group.add_argument('--train-samples', type=int, default=None,
-                       help='Total number of samples to train over all '
-                       'training runs. Note that either train-iters or '
-                       'train-samples should be provided.')
-    group.add_argument('--log-interval', type=int, default=100,
-                       help='Report loss and timing interval.')
-    group.add_argument('--exit-interval', type=int, default=None,
-                       help='Exit the program after the iteration is divisible '
-                       'by this value.')
-    group.add_argument('--exit-duration-in-mins', type=int, default=None,
-                       help='Exit the program after this many minutes.')
-    group.add_argument('--exit-signal-handler', action='store_true',
-                       help='Dynamically save the checkpoint and shutdown the '
-                       'training if signal is received')
-    group.add_argument('--exit-signal', type=str, default='SIGTERM',
-                       choices=list(SIGNAL_MAP.keys()),
-                       help='Signal to use for exit signal handler. If not specified, defaults to SIGTERM.')
-    group.add_argument('--tensorboard-dir', type=str, default=None,
-                       help='Write TensorBoard logs to this directory.')
     group.add_argument('--no-masked-softmax-fusion',
                        action='store_false',
                        help='Disable fusion of query_key_value scaling, '
@@ -2334,34 +2162,6 @@ def _add_learning_rate_args(parser):
                        help='Initial learning rate. Depending on decay style '
                        'and initial warmup, the learning rate at each '
                        'iteration would be different.')
-    group.add_argument('--lr-decay-style', type=str, default='linear',
-                       choices=['constant', 'linear', 'cosine', 'inverse-square-root', 'WSD', 'stablelm2-scheduler'],
-                       help='Learning rate decay function.')
-    group.add_argument('--lr-wsd-decay-style', type=str, default='exponential',
-                       choices=['exponential', 'linear', 'cosine', 'minus_sqrt'],
-                       help='Decay style for the annealing phase of WSD'),
-    group.add_argument('--lr-decay-iters', type=int, default=None,
-                       help='number of iterations to decay learning rate over,'
-                       ' If None defaults to `--train-iters`')
-    group.add_argument('--lr-decay-samples', type=int, default=None,
-                       help='number of samples to decay learning rate over,'
-                       ' If None defaults to `--train-samples`')
-    group.add_argument('--lr-wsd-decay-samples', type=int, default=None,
-                       help='number of samples for the annealing phase in the wsd schedule')
-    group.add_argument('--lr-wsd-decay-iters', type=int, default=None,
-                       help='number of iterations for the annealing phase in the wsd schedule')
-    group.add_argument('--lr-warmup-fraction', type=float, default=None,
-                       help='fraction of lr-warmup-(iters/samples) to use '
-                       'for warmup (as a float)')
-    group.add_argument('--lr-warmup-iters', type=int, default=0,
-                       help='number of iterations to linearly warmup '
-                       'learning rate over.')
-    group.add_argument('--lr-warmup-samples', type=int, default=0,
-                       help='number of samples to linearly warmup '
-                       'learning rate over.')
-    group.add_argument('--lr-warmup-init', type=float, default=0.0,
-                       help='Initial value for learning rate warmup. The '
-                       'scheduler starts warmup from this value.')
     group.add_argument('--warmup', type=int, default=None,
                        help='Old lr warmup argument, do not use. Use one of the'
                        '--lr-warmup-* arguments above')
@@ -2400,42 +2200,6 @@ def _add_checkpointing_args(parser):
     group.add_argument('--ckpt-fully-parallel-save', action='store_true',
                        dest='ckpt_fully_parallel_save_deprecated',
                        help='Deprecated: see --no-ckpt-fully-parallel-save.')
-    group.add_argument('--no-ckpt-fully-parallel-save', action='store_false',
-                       dest='ckpt_fully_parallel_save',
-                       help='Disable applying full save parallelization across DP for'
-                            ' distributed checkpoints. Depending on ckpt format'
-                            ' might decrease the number of files in the checkpoint.'
-                            ' Makes DistributedOptimizer checkpoint non-reshardable.')
-    group.add_argument('--async-save', action='store_true', default=None,
-                       help='Apply async checkpointing save. Currently works only with'
-                            '`torch_dist` distributed checkpoint format.')
-    group.add_argument('--ckpt-fully-parallel-load', action='store_true',
-                       help='Apply full load parallelization across DP for'
-                            ' distributed checkpoints.')
-    group.add_argument('--ckpt-assume-constant-structure', action='store_true',
-                       help='If the model and optimizer state dict structure is'
-                            'constant throughout a *single training job*, it allows for'
-                            'different checkpointing performance optimizations.')
-    group.add_argument('--dist-ckpt-strictness', type=str, default='assume_ok_unexpected',
-                       choices=[e.value for e in StrictHandling],
-                       help='Determine handling of key mismatch during checkpoint load.'
-                            ' Check StrictHandling docs for flags meaning.'
-                            ' NOTE: This flag controls only distributed checkpoint'
-                            ' load from storage, not loading state dict into the model.')
-    group.add_argument('--dist-ckpt-save-pre-mcore-014', action='store_true',
-                       help='Revert checkpointing simplifications introduced in Megatron-Core'
-                            ' v0.14. This option affects only checkpoint saving format and will'
-                            ' be removed soon (checkpoint load format is determined based on'
-                            ' checkpoint metadata).')
-    group.add_argument('--dist-ckpt-optim-fully-reshardable', action='store_true',
-                       help='Make optimizer distributed checkpoint fully reshardable (TP/PP/EP/DP)'
-                            ' as opposed to plain DP reshardability.')
-    group.add_argument('--distrib-optim-fully-reshardable-mem-efficient', action='store_true',
-                       help='During distributed optimizer checkpoint save and load tries to use as'
-                            ' little memory as possible by using Gloo (instead of NCCL) and only one'
-                            ' rank for saving. Turn on only if experiencing host or device memory'
-                            ' issues. Has affect only with `--dist-ckpt-optim-fully-reshardable`'
-                            ' flag.')
     return parser
 
 
@@ -2619,16 +2383,6 @@ def _add_distributed_args(parser):
     group.add_argument('--use-tp-pp-dp-mapping', action='store_true', default=False,
                         help='If set, distributed ranks initialize order is changed '
                         'from tp-cp-ep-dp-pp to tp-cp-ep-pp-dp.')
-    group.add_argument('--replication', action='store_true', default=False,
-                       help="If set, replication of local checkpoints is enabled. "
-                       "Needs to be enabled on all ranks.")
-    group.add_argument('--replication-jump', default=None, type=int,
-                       help="Specifies `J`, the spacing between ranks storing replicas of a given rank's data. "
-                       "Replicas for rank `n` may be on ranks `n+J`, `n+2J`, ..., or `n-J`, `n-2J`, etc. "
-                       "This flag has an effect only if --replication is used. "
-                       "and must be consistent across all ranks.")
-    group.add_argument('--replication-factor', default=2, type=int,
-                       help="Number of machines storing the replica of a given rank's data.")
     group.add_argument('--fake-process-group', action='store_true', default=False,
                        help='If set, initialize with fake distributed process group and all distributed communication operations will be skipped. \
                        This is quite useful for profiling memory usage of distributed training with just one GPU. \
@@ -2675,12 +2429,12 @@ def _add_tokenizer_args(parser):
                                 'NullMultimodalTokenizer',
                                 'SFTTokenizer',
                                 'AquilaTokenizerFS',
-                                'HFTokenizerFS', 
-                                'HFTokenizersTokenizerFS', 
+                                'HFTokenizerFS',
+                                'HFTokenizersTokenizerFS',
                                 'Llama3TokenizerFS',
                                 'QwenTokenizerFS',
                                 'Qwen2TokenizerFS',
-                                'Qwen2VLTokenizer',],
+                                'Qwen2VLTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
@@ -2982,32 +2736,6 @@ def _add_moe_args(parser):
                             'where 1 indicates an expert layer and 0 indicates a dense layer. '
                             'Examples: "([0]+[1]*23)": 1 dense layer followed by 23 expert layers, '
                             '"([1]*3+[0]*2)*2": Three expert layers followed by two dense layers, repeated twice.')
-    group.add_argument('--moe-ffn-hidden-size', type=int, default=None,
-                       help='The hidden size of each expert\'s feed-forward network (ffn). '
-                       'If not specified, defaults to the ffn_hidden_size.')
-    group.add_argument('--moe-shared-expert-intermediate-size', type=int, default=None,
-                       help='Shared expert total ffn hidden size. '
-                       'It should be equal to "num_shared_experts * ffn_size_of_each_shared_expert" if there are multiple shared experts. '
-                       'None means no shared expert. '
-                       'By default, the shared experts execute before the router. However, when '
-                       '--moe-shared-expert-overlap or --overlap-moe-expert-parallel-comm is set, '
-                       'the shared experts execute after the router, before the routed experts. '
-                       'This makes the gradients from the router and the shared experts added in '
-                       'different orders to the hidden_states, causing minor numerical differences '
-                       'in the hidden_states gradient.')
-    group.add_argument('--moe-shared-expert-overlap', action='store_true',
-                       help='Enable overlapping between shared expert computations and dispatcher communications. '
-                       'Without this, the shared experts execute before the router. '
-                       'Only effective when moe-shared-expert-intermediate-size is set.')
-    group.add_argument('--moe-grouped-gemm', action='store_true',
-                       help='When there are multiple experts per rank, launch multiple local GEMM kernels in multiple streams to improve the utilization and performance with GroupedLinear in TransformerEngine.')
-    group.add_argument('--moe-use-legacy-grouped-gemm', action='store_true',
-                       help='Use legacy GroupedMLP rather than TEGroupedMLP. Note: The legacy one will be deprecated soon.')
-    group.add_argument('--moe-layer-recompute', action='store_true',
-                       help='Enable checkpointing for moe_layer, should be used when memory is not sufficient. '
-                       'Deprecated. Use "--recompute-granularity selective --recompute-modules moe" instead.')
-    group.add_argument('--moe-extended-tp', action='store_true',
-                       help='Deprecated. Use --expert-tensor-parallel-size instead.')
     group.add_argument('--moe-use-upcycling', action='store_true',
                        help='Load a checkpoint of a dense model, convert it into an MoE model, and save the converted model to the path specified by --save. '
                        'Upcycling is implemented on the top of distributed checkpointing, so it supports parallel modes different from the dense model.')
@@ -3016,78 +2744,9 @@ def _add_moe_args(parser):
                        choices=['aux_loss', 'seq_aux_loss', 'global_aux_loss', 'sinkhorn', 'none'],
                        default='aux_loss',
                        help='Determines the load balancing strategy for the router. "aux_loss" corresponds to the load balancing loss used in GShard and SwitchTransformer; "seq_aux_loss" corresponds to the load balancing loss used in DeepSeekV2, which computes the loss for each individual sample; "sinkhorn" corresponds to the balancing algorithm used in S-BASE, and "none" implies no load balancing. The default is "aux_loss".')
-    group.add_argument('--moe-router-dtype', type=str,
-                       choices=['fp32', 'fp64'],
-                       default=None,
-                       help='Data type for routing computation and expert output weighted averaging. '
-                            'Fp32/fp64 enhances numerical stability, especially with numerous experts. '
-                            'The perf impact should be negligible when used with permute fusion. '
-                            'None means no changes for dtype.')
-    group.add_argument('--moe-router-fusion', action='store_true',
-                       help='Enable fusion for MoE TopK routing and aux-loss computation. This is only supported in TransformerEngine 2.7.0 and above.')
-    group.add_argument('--moe-router-score-function', type=str,
-                       choices=['softmax', 'sigmoid'],
-                       default='softmax',
-                       help='Score function for MoE TopK routing. Can be "softmax" or "sigmoid".')
-    group.add_argument('--moe-router-topk', type=int, default=2,
-                       help='Number of experts to route to for each token. The default is 2.')
-    group.add_argument('--moe-router-pre-softmax', action='store_true',
-                       help='Enable pre-softmax routing for MoE, which means softmax is before the top-k selection. By default, softmax is done after top-k.')
-    group.add_argument('--moe-router-num-groups', type=int, default=None,
-                       help='Number of groups to divide experts into for group-limited routing. When using group-limited routing: 1) Experts are divided into equal-sized groups, 2) For each token, a subset of groups are selected based on routing scores (sum of top-2 expert scores within each group), 3) From these selected groups, moe_router_topk experts are chosen.'
-                       'Two common use cases: 1) Device-limited routing: Set equal to expert parallel size (EP) to limit each token to experts on a subset of devices (See DeepSeek-V2: https://arxiv.org/pdf/2405.04434) 2) Node-limited routing: Set equal to number of nodes in EP group to limit each token to experts on a subset of nodes (See DeepSeek-V3: https://arxiv.org/pdf/2412.19437)')
-    group.add_argument('--moe-router-group-topk', type=int, default=None,
-                       help='Number of selected groups for group-limited routing.')
-    group.add_argument('--moe-router-topk-scaling-factor', type=float, default=None,
-                       help='Scaling factor for routing score in top-k selection, only works when --moe-router-pre-softmax enabled. Defaults to None, which means no scaling.')
-    group.add_argument('--moe-router-enable-expert-bias', action='store_true',
-                       help='TopK routing with dynamic expert bias in the aux-loss-free load balancing strategy. '
-                       'The routing decision is based on the sum of the routing scores and the expert bias. '
-                       'See https://arxiv.org/abs/2408.15664 for details.')
-    group.add_argument('--moe-router-bias-update-rate', type=float, default=1e-3,
-                       help='Expert bias update rate in the aux-loss-free load balancing strategy. '
-                       'The expert bias is updated based on the number of assigned tokens to each expert in a global batch, '
-                       'where the bias is increased for the experts with less assigned tokens and decreased for the experts with more assigned tokens. '
-                       'The default value 1e-3 is same as that used in DeepSeekV3.')
-    group.add_argument('--moe-router-force-load-balancing', action='store_true',
-                       help='[Experimental] Force override routing to balance token distribution using random logits for MoE routers, supporting naive top-k and group-limited top-k. This experimental feature is for benchmarking purposes only!')
-    group.add_argument('--moe-router-padding-for-quantization', action='store_true',
-                       help='Pad the routing_map to make sure the number of tokens each expert received '
-                       'is a multiple of 16/32 for FP8/FP4 precision. It is suggested to enable this for '
-                       'dropless training with FP8/FP4 precision when num_local_experts > 1. This is a more '
-                       'efficient way to pad for FP8/FP4 which eliminates the explicit padding in the '
-                       'GroupedMLP layer.')
-    group.add_argument('--moe-router-padding-for-fp8', action='store_true',
-                       help='[Compatibility alias for --moe-router-padding-for-quantization] '
-                       'Enabling this will also enable --moe-router-padding-for-quantization.')
     group.add_argument('--moe-aux-loss-coeff', type=float, nargs='+', default=0.0,
                        help='Scaling coefficient for the aux loss: a starting value of 1e-2 is recommended.')
     # Token dispatcher arguments
-    group.add_argument('--moe-token-dispatcher-type', type=str,
-                       choices=['allgather', 'alltoall', 'flex'],
-                       default='allgather',
-                       help="The type of token dispatcher to use. The default is 'allgather'. Options are 'allgather', 'alltoall'. We recommend using 'alltoall' when applying expert parallelism. For more information, please refer to the documentation in core/moe/README.")
-    group.add_argument('--moe-enable-deepep', action='store_true',
-                       help='DEPRECATED: Please use --moe-flex-dispatcher-backend=deepep instead.')
-    group.add_argument('--moe-flex-dispatcher-backend', type=str,
-                       choices=['deepep', 'hybridep'],
-                       default='deepep',
-                       help='The backend to use for flex token dispatcher. The default is "deepep". Options are "deepep" and "hybridep".')
-    group.add_argument('--moe-deepep-num-sms', type=int, default=20,
-                       help='Number of SMs to use for DeepEP.')
-    group.add_argument('--moe-hybridep-num-sms', type=int, default=16,
-                       help='Number of SMs to use for HybridEP.')
-    group.add_argument('--moe-permute-fusion', action='store_true',
-                       help='Fuse token rearrangement ops during token dispatching.')
-    # Token dropping arguments
-    group.add_argument('--moe-expert-capacity-factor', type=float, default=None,
-                       help='The capacity factor for each expert, None means no token will be dropped.')
-    group.add_argument('--moe-pad-expert-input-to-capacity', action='store_true',
-                       help='Pads the input for each expert to match the expert capacity length, effective only after the --moe-expert-capacity-factor is set.')
-    group.add_argument('--moe-token-drop-policy', type=str, default='probs', choices=['probs', 'position'],
-                       help='The policy to drop tokens. Can be either "probs" or "position". If "probs", the tokens with the lowest probabilities will be dropped. If "position", tokens at the end of each batch will be dropped.')
-    group.add_argument('--moe-apply-probs-on-input', action='store_true',
-                       help='Apply probs before mlp activation for moe routing.')
     # MoE communication overlap arguments
 
     group.add_argument('--moe-upcycling-granularity', type=int, default=1,
