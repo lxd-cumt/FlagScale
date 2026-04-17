@@ -653,7 +653,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
         }
 
         def _broadcast_cu_seqlens(cu_seqlens):
-            dev = torch.cuda.current_device()
+            dev = cur_platform.device()
             n = 0 if cu_seqlens is None else int(cu_seqlens.numel())
             n_tensor = torch.tensor(n, dtype=torch.int64, device=dev)
             _broadcast(n_tensor)
@@ -668,7 +668,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
             _broadcast(buf)
 
         if args.hybrid_context_parallel:
-            seq_len = torch.tensor(batch['tokens'].shape[0], dtype=torch.int32, device=torch.cuda.current_device())
+            seq_len = torch.tensor(batch['tokens'].shape[0], dtype=torch.int32, device=cur_platform.device())
             _broadcast(seq_len)
             
         if args.pipeline_model_parallel_size == 1 or mtp_on_this_rank:
@@ -702,7 +702,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
             _broadcast(batch['attention_mask'])
 
         def _broadcast_cu_seqlens(cu_seqlens):
-            dev = torch.cuda.current_device()
+            dev = cur_platform.device()
 
             n = 0 if cu_seqlens is None else int(cu_seqlens.numel())
             n_tensor = torch.tensor(n, dtype=torch.int64, device=dev)
@@ -722,7 +722,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
 
     else:
         if args.hybrid_context_parallel:
-            seq_len = torch.tensor(0, dtype=torch.int32, device=torch.cuda.current_device())
+            seq_len = torch.tensor(0, dtype=torch.int32, device=cur_platform.device())
             _broadcast(seq_len)
             shape = (seq_len.item())
         else:
@@ -762,7 +762,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
             max_seqlen = torch.empty(
                 1,
                 dtype=torch.int32,
-                device=torch.cuda.current_device(),
+                device=cur_platform.device(),
             )
         else:
             max_seqlen = None
@@ -771,16 +771,16 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
         max_seqlen = torch.empty(
             1,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device(),
         ) if args.hybrid_context_parallel else None
         local_cp_size = torch.empty(
             1,
             dtype=torch.int32,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device(),
         ) if args.hybrid_context_parallel else None
 
         def _broadcast_cu_seqlens():
-            dev = torch.cuda.current_device()
+            dev = cur_platform.device()
 
             n = torch.empty((), dtype=torch.int64, device=dev)
             _broadcast(n)
@@ -832,7 +832,7 @@ def get_batch_on_this_tp_rank(data_iterator, mtp_on_this_rank: bool = False):
             _broadcast(attention_mask)
 
         def _broadcast_cu_seqlens():
-            dev = torch.cuda.current_device()
+            dev = cur_platform.device()
 
             n = torch.empty((), dtype=torch.int64, device=dev)
             _broadcast(n)
