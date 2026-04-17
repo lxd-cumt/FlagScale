@@ -36,6 +36,8 @@ except ImportError:
 from megatron.training.extra_valid import extra_valid_datasets_provider
 from megatron.training.training import pretrain
 from megatron.plugin.hetero.parallel_context import get_parallel_context
+from megatron.plugin.platform import get_platform
+cur_platform = get_platform()
 
 # engram
 from flagscale.models.megatron.engram.engram_builder import engram_builder
@@ -60,15 +62,15 @@ def get_batch_on_this_tp_rank(data_iterator):
         assert data_iterator is not None
         data = next(data_iterator)
         batch = {
-            'tokens': data["tokens"].cuda(non_blocking=True),
-            'labels': data["labels"].cuda(non_blocking=True),
-            'loss_mask': data["loss_mask"].cuda(non_blocking=True),
+            'tokens': data["tokens"].to(device=cur_platform.device_name(), non_blocking=True),
+            'labels': data["labels"].to(device=cur_platform.device_name(), non_blocking=True),
+            'loss_mask': data["loss_mask"].to(device=cur_platform.device_name(), non_blocking=True),
             'attention_mask': (
                 None
                 if "attention_mask" not in data
-                else data["attention_mask"].cuda(non_blocking=True)
+                else data["attention_mask"].to(device=cur_platform.device_name(), non_blocking=True)
             ),
-            'position_ids': data["position_ids"].cuda(non_blocking=True),
+            'position_ids': data["position_ids"].to(device=cur_platform.device_name(), non_blocking=True),
         }
 
         if args.pipeline_model_parallel_size == 1:
@@ -107,30 +109,30 @@ def get_batch_on_this_tp_rank(data_iterator):
         tokens = torch.empty(
             (args.micro_batch_size, args.seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device_name(),
         )
         labels = torch.empty(
             (args.micro_batch_size, args.seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device_name(),
         )
         loss_mask = torch.empty(
             (args.micro_batch_size, args.seq_length),
             dtype=torch.float32,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device_name(),
         )
         if args.create_attention_mask_in_dataloader:
             attention_mask = torch.empty(
                 (args.micro_batch_size, 1, args.seq_length, args.seq_length),
                 dtype=torch.bool,
-                device=torch.cuda.current_device(),
+                device=cur_platform.device_name(),
             )
         else:
             attention_mask = None
         position_ids = torch.empty(
             (args.micro_batch_size, args.seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=cur_platform.device_name(),
         )
 
         if args.pipeline_model_parallel_size == 1:

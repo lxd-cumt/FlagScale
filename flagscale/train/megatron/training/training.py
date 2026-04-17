@@ -61,10 +61,11 @@ import torch
 
 try:
     from megatron.rl import rl_utils
+    from megatron.rl.parallel_utils import build_inference_pg_collection
     has_rl_utils = True
 except ImportError:
     has_rl_utils = False
-from megatron.rl.parallel_utils import build_inference_pg_collection
+    build_inference_pg_collection = None
 try:
     from modelopt.torch.distill.plugins.megatron import (
         get_tensor_shapes_adjust_fn_for_distillation,
@@ -193,10 +194,6 @@ from . import one_logger_utils
 from .dgrad_logging import enable_dgrad_logging, disable_dgrad_logging, save_dgrads
 
 from megatron.training import ft_integration
-
-from megatron.training.extra_valid import extra_evaluate_and_print_results
-from megatron.training.extra_valid import build_extra_valid_data_iterators
-from megatron.training.stablelm2_scheduler import StableLM2SchedulerConfig
 from megatron.training.global_vars import get_spiky_loss_detector
 from megatron.training.fs_theoretical_memory_usage import report_theoretical_memory as fs_report_theoretical_memory
 from megatron.plugin.hetero.parallel_context import get_parallel_context
@@ -1359,6 +1356,7 @@ def pretrain(
 
     ######### FlagScale Begin ##########
     if extra_valid_dataset_provider is not None:
+        from megatron.training.extra_valid import extra_evaluate_and_print_results, build_extra_valid_data_iterators
         # NOTE(zhaoyinglia): Must rebuild the dataloaders for extra validation here,
         # to guarantee extra validation start from extra_iter=0 every time,
         # but we don't need to rebuild the datasets.
@@ -1719,6 +1717,7 @@ def get_optimizer_param_scheduler(optimizer):
     ########## FlagScale Begin ##########
     stablelm2_scheduler_config = None
     if args.lr_decay_style == 'stablelm2-scheduler':
+        from megatron.training.stablelm2_scheduler import StableLM2SchedulerConfig
         stablelm2_scheduler_config = StableLM2SchedulerConfig(
           args.global_batch_size,
           args.lr_decay_stablelm2_cosine_samples,
@@ -3421,6 +3420,7 @@ def train(
         ######## FlagScale Begin ########
         # Extra Evaluation =====================================================================
         if args.extra_eval_interval and iteration % args.extra_eval_interval == 0:
+            from megatron.training.extra_valid import extra_evaluate_and_print_results, build_extra_valid_data_iterators
             # NOTE(zhaoyinglia): Must rebuild the dataloaders for extra validation here,
             # to guarantee extra validation start from extra_iter=0 every time,
             # but we don't need to rebuild the datasets.
