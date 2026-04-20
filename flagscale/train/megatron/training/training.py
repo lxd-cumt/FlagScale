@@ -168,7 +168,6 @@ from megatron.core.distributed import DistributedDataParallelConfig, TorchFullyS
 from megatron.core.distributed import DistributedDataParallel as DDP
 from megatron.core.distributed.fsdp.mcore_fsdp_adapter import FullyShardedDataParallel as megatron_FSDP
 from megatron.core.optimizer.optimizer import param_group_identifier_keys
-from megatron.training.utils import get_megatron_optimizer_config
 
 from megatron.core.optimizer.qk_clip import clip_qk
 

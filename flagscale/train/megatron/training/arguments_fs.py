@@ -700,19 +700,6 @@ def _add_vision_args(parser):
     return parser
 
 
-def _add_regularization_args(parser):
-    group = parser.add_argument_group(title='flagscale regularization')
-
-    group.add_argument('--muon-matched-adamw-rms', type=float, default=0.2,
-                       help="The RMS of the matched AdamW's, typically 0.2 ~ 0.4")
-    group.add_argument('--muon-ns-steps', type=int, default=5,
-                       help='Number of Newton-Schultz iteartion steps for muon')
-    group.add_argument('--no-muon-nesterov', action='store_false',
-                       dest='muon_nesterov', default=True,
-                       help='If set, disable Nesterov momentum for muon')
-    return parser
-
-
 def _add_flagos_args(parser):
     group = parser.add_argument_group(title="flagscale fl")
     group.add_argument('--mg-fl-prefer', type=str, choices=['cuda', 'musa', 'txda'], default='',
@@ -859,7 +846,6 @@ def add_flagscale_arguments(parser):
     parser = _add_auto_tuner_args(parser)
     parser = _add_auto_skip_spiky_loss(parser)
     parser = _add_peft_args(parser)
-    parser = _add_regularization_args(parser)
     parser = _add_flagos_args(parser)
     parser = _add_engram_args(parser)
     parser = _add_flagscale_specific_args(parser)
