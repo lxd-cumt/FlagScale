@@ -1648,6 +1648,23 @@ def _add_network_size_args(parser):
         "persist_layer_norm",
         "bias_dropout_fusion",
         "apply_rope_fusion",
+        # FlagScale-specific: manually added in arguments_fs.py
+        "use_dualpipev",
+        "moe_fb_overlap",
+        "te_fl_prefer",
+        "qk_layernorm_hidden_dim",
+        "recompute_granularity_per_stage_micro_batch",
+        "recompute_method_per_stage_micro_batch",
+        "recompute_num_layers_per_stage_micro_batch",
+        # FlagScale PEFT/LoRA: manually added in arguments_fs.py
+        "peft_type",
+        "lora_target_modules",
+        "lora_dim",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_dropout_position",
+        "lora_in_init_method",
+        "lora_out_init_method",
     ]
     transformer_factory = ArgumentGroupFactory(TransformerConfig, exclude=exclude)
     transformer_group = transformer_factory.build_group(parser, "transformer configuration")
