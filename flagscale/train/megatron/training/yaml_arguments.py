@@ -38,9 +38,6 @@ str_dtype_to_torch = {
     "bfloat16" : torch.bfloat16
 }
 
-from megatron.plugin.platform import get_platform
-cur_platform = get_platform()
-
 def validate_yaml(args, defaults={}):
     
     # This is for legacy script env var setting
@@ -260,7 +257,7 @@ def validate_yaml(args, defaults={}):
 
     if args.language_model.moe_grouped_gemm:
         assert args.model_parallel.bf16, 'Currently GroupedGEMM for MoE only supports bf16 dtype.'
-        dc = cur_platform.get_device_capability()
+        dc = torch.cuda.get_device_capability()
         assert dc[0] >= 8, "Unsupported compute capability for GroupedGEMM kernels."
 
     if args.weight_decay_incr_style == 'constant':
@@ -307,20 +304,11 @@ def validate_yaml(args, defaults={}):
     if args.model_parallel.tensor_model_parallel_size == 1:
         args.model_parallel.sequence_parallel = False
 
-    # disable async_tensor_model_parallel_allreduce when
-    # model parallel memory optimization is enabled
-    if args.model_parallel.sequence_parallel:
-        args.model_parallel.async_tensor_model_parallel_allreduce = False
-
     if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
         if args.model_parallel.sequence_parallel:
             raise RuntimeError(
                 "Using sequence parallelism requires setting the environment variable "
                 "CUDA_DEVICE_MAX_CONNECTIONS to 1")
-        if args.model_parallel.async_tensor_model_parallel_allreduce:
-            raise RuntimeError(
-                "Using async gradient all reduce requires setting the environment "
-                "variable CUDA_DEVICE_MAX_CONNECTIONS to 1")
     
     # MoE Spec check
     if args.language_model.num_moe_experts is not None:
