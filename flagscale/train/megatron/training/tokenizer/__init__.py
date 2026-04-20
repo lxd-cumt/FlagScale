@@ -8,6 +8,6 @@ HuggingFace, TikToken, etc.) are handled by the upstream factory at
 megatron.core.tokenizers.utils.build_tokenizer.
 """
 
-from .tokenizer import build_tokenizer
+from .tokenizer import build_tokenizer, register_tokenizer_factory
 
-__all__ = ['build_tokenizer']
+__all__ = ['build_tokenizer', 'register_tokenizer_factory']
