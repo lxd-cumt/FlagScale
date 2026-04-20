@@ -45,6 +45,10 @@ from megatron.core.quantization.utils import (
 )
 
 from megatron.training.argument_utils import ArgumentGroupFactory
+from megatron.training.arguments_fs import add_flagscale_arguments
+
+from megatron.plugin.platform import get_platform
+cur_platform = get_platform()
 
 def add_megatron_arguments(parser: argparse.ArgumentParser):
     """"Add Megatron-LM arguments to the given parser."""
@@ -91,6 +95,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
                                      allow_abbrev=False)
 
     parser = add_megatron_arguments(parser)
+    parser = add_flagscale_arguments(parser)
 
     # Custom arguments.
     if extra_args_provider is not None:
@@ -312,12 +317,20 @@ def validate_args(args, defaults={}):
             "legacy model format only supports the 'torch' checkpoint format."
     update_use_dist_ckpt(args)
 
-    total_model_size = args.tensor_model_parallel_size * args.pipeline_model_parallel_size * args.context_parallel_size
+    # FlagScale begin
+    enable_hetero = defaults.get("enable_hetero", False)
+    standalone_embedding_stage = defaults.get("standalone_embedding_stage", False)
+    multiple_of = defaults.get("multiple_of", None)
+    hidden_dim_multiplier = defaults.get("hidden_dim_multiplier", None)
 
-    # Total model size.
-    assert args.world_size % total_model_size == 0, (
-        f"world size ({args.world_size}) is not divisible by total_model_size ({total_model_size=})"
-    )
+
+    if not enable_hetero:
+        total_model_size = args.tensor_model_parallel_size * args.pipeline_model_parallel_size * args.context_parallel_size
+
+        # Total model size.
+        assert args.world_size % total_model_size == 0, (
+            f"world size ({args.world_size}) is not divisible by total_model_size ({total_model_size=})"
+        )
 
     if args.attention_backend == AttnBackend.local:
         assert args.spec[0] == 'local' , '--attention-backend local is only supported with --spec local'
@@ -783,6 +796,7 @@ def validate_args(args, defaults={}):
         if args.virtual_pipeline_model_parallel_size == 1:
             args.virtual_pipeline_model_parallel_size = None
     elif args.num_layers_per_virtual_pipeline_stage is not None or args.num_virtual_stages_per_pipeline_rank is not None:
+        assert enable_hetero is False, 'num_layers_per_virtual_pipeline_stage is not supported with heterogeneous parallelism for now'
         if args.num_virtual_stages_per_pipeline_rank is None:
             assert args.decoder_first_pipeline_num_layers is None and args.decoder_last_pipeline_num_layers is None, \
                 'please use --num-virtual-stages-per-pipeline-rank to specify virtual pipeline parallel degree when enable uneven pipeline parallelism'
@@ -826,8 +840,10 @@ def validate_args(args, defaults={}):
                 if args.account_for_loss_in_pipeline_split:
                     num_layers += 1
 
-                assert num_layers % args.transformer_pipeline_model_parallel_size == 0, \
-                    'Number of layers should be divisible by the pipeline-model-parallel size'
+                if enable_hetero is False:
+                    assert num_layers % args.transformer_pipeline_model_parallel_size == 0, \
+                        'Number of layers should be divisible by the pipeline-model-parallel size'
+
 
     if args.virtual_pipeline_model_parallel_size is not None:
         if args.overlap_p2p_comm:
@@ -1087,12 +1103,22 @@ def validate_args(args, defaults={}):
     # Checks.
     if args.ffn_hidden_size is None:
         if args.swiglu:
-            # reduce the dimnesion for MLP since projections happens on
-            # two linear layers. this keeps the number of paramters in
-            # the same ballpark as the counterpart with 4*h size
-            # we keep it a multiple of 64, which means the actual tensor size
-            # will be a multiple of 64 / tp_size
-            args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
+            # Ref: https://github.com/facebookresearch/llama/blob/main/llama/model.py#L161-L162
+            if multiple_of is not None:
+                hidden_dim = int(4 * args.hidden_size * 2 / 3)
+                if hidden_dim_multiplier is not None:
+                    assert hidden_dim_multiplier > 0, \
+                        'multiplier for hidden dim should be greater than zero'
+                    hidden_dim = int(hidden_dim * hidden_dim_multiplier)
+                args.ffn_hidden_size = multiple_of * \
+                    ((hidden_dim + multiple_of - 1) // multiple_of)
+            else:
+                # reduce the dimnesion for MLP since projections happens on
+                # two linear layers. this keeps the number of paramters in
+                # the same ballpark as the counterpart with 4*h size
+                # we keep it a multiple of 64, which means the actual tensor size
+                # will be a multiple of 64 / tp_size
+                args.ffn_hidden_size = int((4 * args.hidden_size * 2 / 3) / 64) * 64
         else:
             args.ffn_hidden_size = 4 * args.hidden_size
 
@@ -1136,7 +1162,8 @@ def validate_args(args, defaults={}):
             'residual connection in fp32 only supported when using fp16 or bf16.'
 
     if args.moe_grouped_gemm:
-        dc = torch.cuda.get_device_capability()
+        assert args.bf16, 'Currently GroupedGEMM for MoE only supports bf16 dtype.'
+        dc = cur_platform.get_device_capability()
         assert dc[0] >= 8, "Unsupported compute capability for GroupedGEMM kernels."
 
     if args.no_weight_decay_cond_type is not None:
@@ -1650,6 +1677,10 @@ def core_transformer_config_from_args(args, config_class=None):
         assert not args.multi_latent_attention, "Multi latent attention with heterogeneous layers is not supported."
         config_class = HeterogeneousTransformerConfig
 
+    if args.use_engram:
+        from flagscale.models.megatron.engram.engram_config import EngramConfig
+        config_class = EngramConfig
+
     # Translate args to core transformer configuration
     kw_args = {}
     for f in dataclasses.fields(config_class):
@@ -2005,6 +2036,23 @@ def _add_network_size_args(parser):
         "persist_layer_norm",
         "bias_dropout_fusion",
         "apply_rope_fusion",
+        # FlagScale-specific: manually added in arguments_fs.py
+        "use_dualpipev",
+        "moe_fb_overlap",
+        "te_fl_prefer",
+        "qk_layernorm_hidden_dim",
+        "recompute_granularity_per_stage_micro_batch",
+        "recompute_method_per_stage_micro_batch",
+        "recompute_num_layers_per_stage_micro_batch",
+        # FlagScale PEFT/LoRA: manually added in arguments_fs.py
+        "peft_type",
+        "lora_target_modules",
+        "lora_dim",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_dropout_position",
+        "lora_in_init_method",
+        "lora_out_init_method",
     ]
     transformer_factory = ArgumentGroupFactory(TransformerConfig, exclude=exclude)
     transformer_group = transformer_factory.build_group(parser, "transformer configuration")
@@ -2787,7 +2835,14 @@ def _add_tokenizer_args(parser):
                                 'MultimodalTokenizer',
                                 'NullTokenizer',
                                 'NullMultimodalTokenizer',
-                                'SFTTokenizer'],
+                                'SFTTokenizer',
+                                'AquilaTokenizerFS',
+                                'HFTokenizerFS',
+                                'HFTokenizersTokenizerFS',
+                                'Llama3TokenizerFS',
+                                'QwenTokenizerFS',
+                                'Qwen2TokenizerFS',
+                                'Qwen2VLTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
