@@ -54,7 +54,7 @@ def get_batch(data_iterator, vp_stage=None):
     # slice batch along sequence dimension for context parallelism
     batch = get_batch_on_this_cp_rank(batch)
 
-    return batch.values()
+    return batch['tokens'], batch['labels'], batch['loss_mask'], batch['attention_mask'], batch['position_ids']
 
 
 # define spiky loss as a loss that's 10x the max loss observed
