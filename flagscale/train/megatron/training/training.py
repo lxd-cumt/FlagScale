@@ -1771,9 +1771,18 @@ def get_megatron_optimizer_config(args: Any) -> OptimizerConfig:
     else:
         raise ValueError("Invalid optimizer type!")
 
-    # Construct the appropriate config_overrides object. This default handles many cases, but
-    #  can be added to as needed by the user, or replaced entirely with a custom override.
-    config_overrides = get_standard_config_overrides(config=config)
+    # Construct the appropriate config_overrides object.
+    # Use old-style OptimizerConfig overrides (not ParamGroupOverride) for compatibility
+    # with _get_param_groups which expects OptimizerConfig dataclass instances.
+    if args.decoupled_lr is not None:
+        decoupled_param_key = ParamKey(attr="is_embedding_or_output_parameter")
+        decoupled_optimizer_config = copy.deepcopy(config)
+        decoupled_optimizer_config.lr = args.decoupled_lr
+        if args.decoupled_min_lr is not None:
+            decoupled_optimizer_config.min_lr = args.decoupled_min_lr
+        config_overrides = {decoupled_param_key: decoupled_optimizer_config}
+    else:
+        config_overrides = None
 
     return config, config_overrides
 
