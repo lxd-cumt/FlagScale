@@ -404,11 +404,11 @@ def _add_hetero_args(parser):
     """Add heterogeneous training related arguments (FlagScale specific)."""
     group = parser.add_argument_group(title="flagscale heterogeneous training")
 
-    group.add_argument(
-        "--enable-hetero",
-        action="store_true",
-        help="the mode of heterogeneous training",
-    )
+    # NOTE: --enable-hetero and --hetero-pipeline-layer-split are now auto-generated
+    # by ArgumentGroupFactory(TransformerConfig) and ArgumentGroupFactory(MLATransformerConfig).
+    # They were moved to ModelParallelConfig in upstream core_v0.16.1.
+    # Only FlagScale-specific hetero args remain here.
+
     group.add_argument(
         "--hetero-device-types",
         nargs="*",
@@ -421,17 +421,6 @@ def _add_hetero_args(parser):
         type=str,
         default=None,
         help="the current device type",
-    )
-    group.add_argument(
-        "--hetero-pipeline-layer-split",
-        nargs="*",
-        type=int,
-        default=None,
-        help=(
-            "Incompatible with --num-layers-per-virtual-pipeline-stage for now. "
-            "hetero-pipeline-layer-split must be in the form: layers_0 layers_1 ... layers_n. "
-            "The number of the list should be equal to pipeline-model-parallel-size."
-        ),
     )
     group.add_argument(
         "--hetero-process-meshes",
