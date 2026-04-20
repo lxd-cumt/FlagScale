@@ -37,7 +37,7 @@ import megatron.legacy.model  # isort: skip
 # NOTE: Loading `megatron.legacy.model` earlier fails due to circular import
 
 try:
-    from megatron.post_training.arguments import add_modelopt_args, modelopt_args_enabled
+    from megatron.post_training.arguments import add_modelopt_args
     from megatron.post_training.loss_func import loss_func as loss_func_modelopt
     from megatron.post_training.model_provider import model_provider as model_provider_modelopt
 
@@ -68,7 +68,7 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
     """
     args = get_args()
 
-    if has_nvidia_modelopt and modelopt_args_enabled(args):  # [ModelOpt]
+    if has_nvidia_modelopt and getattr(args, 'modelopt_enabled', False):  # [ModelOpt]
         return model_provider_modelopt(pre_process, post_process)
 
     use_te = args.transformer_impl == "transformer_engine"
