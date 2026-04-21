@@ -2639,7 +2639,8 @@ def training_log(
                 )
                 if avg >= 0.0:
                     log_string += ' {}: {:.6E} |'.format(key, avg)
-                total_loss_dict[key] = torch.tensor([0.0], dtype=torch.float, device=cur_platform.device_name())
+                if should_reset:
+                    total_loss_dict[key] = torch.tensor([0.0], dtype=torch.float, device=cur_platform.device_name())
         log_string += f' loss scale: {loss_scale:.1f} |'
         if grad_norm is not None:
             log_string += f' grad norm: {grad_norm:.3f} |'
