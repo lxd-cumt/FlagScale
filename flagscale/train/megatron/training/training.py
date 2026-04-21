@@ -1343,7 +1343,7 @@ def pretrain(
                     tag="rl_inference_model", enable_cpu_backup=True
                 )
             elif uvm_mempool is not None:
-                model_alloc_ctx = torch.cuda.use_mem_pool(uvm_mempool)
+                model_alloc_ctx = cur_platform.use_mem_pool(uvm_mempool)
             else:
                 model_alloc_ctx = nullcontext()
 
@@ -2784,7 +2784,7 @@ def save_checkpoint_and_time(
     for model_chunk in model:
         if hasattr(model_chunk, 'free_overlap_buffers'):
             model_chunk.free_overlap_buffers()
-    torch.cuda.empty_cache()
+    cur_platform.empty_cache()
 
     global num_checkpoints_memory_reported, MAX_NUM_CHECKPOINTS_MEMORY_REPORTED
     should_report_memory = num_checkpoints_memory_reported < MAX_NUM_CHECKPOINTS_MEMORY_REPORTED
@@ -3444,7 +3444,7 @@ def train(
         if args.perform_rl_step:
             if optimizer is None:
                 # Release stale CUDA cached memory before inference.
-                torch.cuda.empty_cache()
+                cur_platform.empty_cache()
             with torch.no_grad():
                 train_data_iterator = rl_utils.get_grpo_data_iterator(
                     model, inference_model, optimizer, iteration, ref_state_dict,

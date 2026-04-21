@@ -6,6 +6,8 @@ import math
 import torch
 import torch.nn as nn
 
+from megatron.plugin.platform import get_platform
+
 from .engram_config import EngramConfig
 from .multi_head_embedding import MultiHeadEmbedding
 
@@ -16,6 +18,8 @@ from .short_conv import ShortConv
 
 ## Megatron
 from megatron.core.transformer.utils import sharded_state_dict_default
+
+cur_platform = get_platform()
 
 class Engram(nn.Module):
     def __init__(self, engram_cfg: EngramConfig, layer_id):
@@ -46,8 +50,8 @@ class Engram(nn.Module):
         )
         self.embedding_cache = None  # Cache for pre-computed embeddings
         self.embedding_stream = None  # Stream for pre-computing embeddings
-        if torch.cuda.is_available():
-            self.embedding_stream = torch.cuda.Stream()
+        if cur_platform.is_available():
+            self.embedding_stream = cur_platform.Stream()
         self.short_conv = ShortConv(
             hidden_size=self.backbone_config.hidden_size,
             kernel_size=engram_cfg.engram_kernel_size,
@@ -91,7 +95,7 @@ class Engram(nn.Module):
         if self.embedding_cache is not None:
             embeddings, embedding_event = self.embedding_cache
             if embedding_event is not None:
-                torch.cuda.current_stream().wait_event(embedding_event)  # Ensure pre-computed embeddings are ready
+                cur_platform.current_stream().wait_event(embedding_event)  # Ensure pre-computed embeddings are ready
             self.embedding_cache = None  # Clear cache after use
             del embedding_event  # Free the event
         else:
@@ -141,9 +145,9 @@ class Engram(nn.Module):
         """
         assert input_ids is not None, "Input ids can not be None for EngramModel"
         self.embedding_stream.synchronize()  # Ensure previous computations on the stream are finished
-        with torch.cuda.stream(self.embedding_stream):
+        with cur_platform.stream(self.embedding_stream):
             embedding_result = self.memory(input_ids).flatten(start_dim=-2)
-        embedding_event = torch.cuda.Event()
+        embedding_event = cur_platform.Event()
         embedding_event.record(self.embedding_stream)
         self.embedding_cache = (embedding_result, embedding_event)
         

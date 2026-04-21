@@ -5,6 +5,8 @@ from typing import Optional
 import torch
 from torch import Tensor
 
+from megatron.plugin.platform import get_platform
+
 from megatron.core.inference.contexts import BaseInferenceContext
 
 ## megatron-core
@@ -15,6 +17,8 @@ from megatron.core.utils import deprecate_inference_params
 ## engram
 from .engram_transformer_layer import EngramTransformerBlock
 from .ngram_hash import get_or_create_hash_mapping
+
+cur_platform = get_platform()
 
 
 class LazyHashInputIds:
@@ -32,8 +36,8 @@ class LazyHashInputIds:
         self._is_async_pending = False        
         # Async
         if self.hash_stream is not None:
-            # self.hash_stream.wait_stream(torch.cuda.current_stream())
-            with torch.cuda.stream(self.hash_stream):
+            # self.hash_stream.wait_stream(cur_platform.current_stream())
+            with cur_platform.stream(self.hash_stream):
                 self._result = self.hash_mapping.hash(self.input_ids)
             self._is_async_pending = True
             # record result to use across stream
@@ -43,7 +47,7 @@ class LazyHashInputIds:
         """Helper to record current stream on all result tensors"""
         if self._result is None:
             return
-        current_stream = torch.cuda.current_stream()
+        current_stream = cur_platform.current_stream()
         if isinstance(self._result, dict):
             for t in self._result.values():
                 if isinstance(t, torch.Tensor):
@@ -54,7 +58,7 @@ class LazyHashInputIds:
     def __getitem__(self, key):
         # Case 1: Async compute -> wait
         if self._is_async_pending:
-            torch.cuda.current_stream().wait_stream(self.hash_stream)
+            cur_platform.current_stream().wait_stream(self.hash_stream)
             self._is_async_pending = False  # Async finish
             self._record_current_stream()
             
@@ -105,8 +109,8 @@ class EngramModel(GPTModel):
         # Optional: Create a separate CUDA stream for hash computation
         # This allows overlapping hash computation with preprocessing
         self._hash_stream = None
-        if torch.cuda.is_available():
-            self._hash_stream = torch.cuda.Stream()
+        if cur_platform.is_available():
+            self._hash_stream = cur_platform.Stream()
 
     def forward(
         self,

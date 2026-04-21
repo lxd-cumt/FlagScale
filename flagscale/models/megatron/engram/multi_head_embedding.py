@@ -8,6 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
+from megatron.plugin.platform import get_platform
+
+cur_platform = get_platform()
+
 # megatron-core
 from megatron.core import tensor_parallel
 from megatron.core.utils import get_pg_size, get_pg_rank, get_tensor_model_parallel_group_if_none
@@ -114,7 +118,7 @@ class EngramMemory(nn.Module):
                 torch.empty(
                     self.num_embeddings_per_partition,
                     self.embedding_dim,
-                    device=torch.cuda.current_device(),
+                    device=cur_platform.current_device(),
                     dtype=config.params_dtype,
                 )
             )
@@ -136,7 +140,7 @@ class EngramMemory(nn.Module):
         setattr(self.weight, "is_offloading_candidate", True)
 
     def _dispatch(self, input_ids):
-        torch.cuda.nvtx.range_push("engram_embedding_dispatch")
+        cur_platform.range_push("engram_embedding_dispatch")
         self.hidden_shape = input_ids.shape
         input_ids = input_ids.view(-1)
         routing_map = input_ids // self.num_embeddings_per_partition
@@ -183,15 +187,15 @@ class EngramMemory(nn.Module):
             self.embedding_parallel_group, routed_input, self.output_splits, self.input_splits
         )
         routed_input = routed_input - self.vocab_start_index
-        torch.cuda.nvtx.range_pop()
+        cur_platform.range_pop()
         return routed_input
-    
+
     def _combine(self, hidden_states: torch.Tensor):
-        torch.cuda.nvtx.range_push("engram_embedding_combine")
+        cur_platform.range_push("engram_embedding_combine")
         routed_hidden_states = tensor_parallel.all_to_all(self.embedding_parallel_group, hidden_states, self.input_splits, self.output_splits)
         routed_hidden_states = routed_hidden_states[self._token_unsort_indices]
         hidden_states = routed_hidden_states.view(*self.hidden_shape, -1)
-        torch.cuda.nvtx.range_pop()
+        cur_platform.range_pop()
         return hidden_states
 
     def forward(self, input_: torch.Tensor):
@@ -200,7 +204,7 @@ class EngramMemory(nn.Module):
         Args:
             input_ (torch.Tensor): Input tensor, shape (b, s), dtype = torch.int64.
         """
-        torch.cuda.nvtx.range_push("engram_embedding_forward")
+        cur_platform.range_push("engram_embedding_forward")
         if self.reduce_scatter_embeddings:
             tp_size = parallel_state.get_tensor_model_parallel_world_size()
             tp_rank = parallel_state.get_tensor_model_parallel_rank()
@@ -223,7 +227,7 @@ class EngramMemory(nn.Module):
             output = self._combine(output)
         if self.reduce_scatter_embeddings:
             output = output.transpose(0, 1).contiguous()
-        torch.cuda.nvtx.range_pop()
+        cur_platform.range_pop()
         return output
 
     def sharded_state_dict(
