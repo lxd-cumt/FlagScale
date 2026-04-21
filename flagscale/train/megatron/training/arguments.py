@@ -339,7 +339,8 @@ def validate_args(args, defaults={}):
     args.transformer_pipeline_model_parallel_size = args.pipeline_model_parallel_size
 
     total_model_size = args.tensor_model_parallel_size * args.pipeline_model_parallel_size * args.context_parallel_size
-    args.data_parallel_size = args.world_size // total_model_size
+    if not enable_hetero:
+        args.data_parallel_size = args.world_size // total_model_size
 
     if args.perform_rl_step:
         # ----------------------------------------------------------------
@@ -489,7 +490,8 @@ def validate_args(args, defaults={}):
         "--hierarchical-context-parallel-sizes must be set when a2a+p2p is used in cp comm"
 
     if args.expert_tensor_parallel_size is None:
-        args.expert_tensor_parallel_size = args.tensor_model_parallel_size
+        if not enable_hetero:
+            args.expert_tensor_parallel_size = args.tensor_model_parallel_size
 
     # Deprecated arguments.
     assert args.batch_size is None, '--batch-size argument is no longer ' \
