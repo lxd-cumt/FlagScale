@@ -2037,6 +2037,8 @@ def _add_network_size_args(parser):
         "bias_dropout_fusion",
         "apply_rope_fusion",
         # FlagScale-specific: manually added in arguments_fs.py
+        "enable_hetero",
+        "hetero_pipeline_layer_split",
         "use_dualpipev",
         "moe_fb_overlap",
         "te_fl_prefer",
