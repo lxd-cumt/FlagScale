@@ -29,11 +29,6 @@ from megatron.core.enums import ModelType
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.models.gpt import GPTModel
 from megatron.core.rerun_state_machine import get_rerun_state_machine
-######### FlagScale Begin #########
-# Use FlagScale's tokenizer shim which handles FlagScale-specific tokenizer
-# types (QwenTokenizerFS, etc.) and delegates standard types to upstream.
-from megatron.training.tokenizer import build_tokenizer
-######### FlagScale End #########
 from megatron.core.utils import get_attr_wrapped_model, get_thd_batch_on_this_cp_rank, get_batch_on_this_hybrid_cp_rank, StragglerDetector
 from megatron.training import (
     get_args,
@@ -63,6 +58,9 @@ except ImportError:
     has_nvidia_modelopt = False
 
 ######### FlagScale Begin #########
+# Use FlagScale's tokenizer shim which handles FlagScale-specific tokenizer
+# types (QwenTokenizerFS, etc.) and delegates standard types to upstream.
+from megatron.training.tokenizer import build_tokenizer
 from megatron.training.extra_valid import extra_valid_datasets_provider
 from megatron.training.training import pretrain
 from megatron.plugin.hetero.parallel_context import get_parallel_context

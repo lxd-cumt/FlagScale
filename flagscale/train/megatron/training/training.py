@@ -1974,7 +1974,15 @@ def setup_model_and_optimizer(
         if args.perform_rl_step:
             update_train_iters(args)
     else:
-        config, config_overrides = get_megatron_optimizer_config(args)
+        ######### FlagScale Begin #########
+        config = None
+        para_ctx = get_parallel_context()
+        if para_ctx is not None:
+            config, config_overrides = para_ctx.get_optimizer_config()
+
+        if config is None:
+            config, config_overrides = get_megatron_optimizer_config(args)
+        ######### FlagScale End #########
         config.timers = timers
         if getattr(args, "use_mup", False):
             model_config_source = (
