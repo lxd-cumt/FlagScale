@@ -382,9 +382,6 @@ class FSTrainArguments:
                     " which causes all param.grad attributes to be None during the backward-for-inputs phase. "
                     " This absence of gradient tensors violates the assumptions of both overlap_grad_reduce and overlap_param_gather, precipitating an assertion failure within DDP."
                 )
-                assert not getattr(
-                    args, 'moe_use_legacy_grouped_gemm', False
-                ), 'delay_wgrad_compute is not supported with legacy groupedgemm implementation'
                 assert (
                     args.transformer_impl == 'transformer_engine'
                 ), 'delay_wgrad_compute is only supported with transformer_engine implementation'
