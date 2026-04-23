@@ -84,7 +84,7 @@ install_megatron_lm() {
     should_build_package "megatron-core" || return 0
     set_step "Installing Megatron-LM-FL"
     mkdir -p "$FLAGSCALE_DEPS"
-    retry_git_clone -d $DEBUG "https://github.com/lxd-cumt/Megatron-LM-FL" "$FLAGSCALE_DEPS/Megatron-LM-FL" "$RETRY_COUNT" || return 1
+    retry_git_clone -d $DEBUG "https://github.com/lxd-cumt/Megatron-LM-FL.git" "$FLAGSCALE_DEPS/Megatron-LM-FL" "$RETRY_COUNT" || return 1
     local pip_cmd=$(get_pip_cmd)
     run_cmd -d $DEBUG bash -c "cd '$FLAGSCALE_DEPS/Megatron-LM-FL' && \
         $pip_cmd install --root-user-action=ignore --no-build-isolation . -vvv" || return 1
