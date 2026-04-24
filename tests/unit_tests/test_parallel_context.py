@@ -1,10 +1,10 @@
 import torch
 
 import megatron.training.global_vars as mcore_global_vars
+from megatron.core.tokenizers.text.libraries.null_tokenizer import NullTokenizer
 from megatron.plugin.hetero.parallel_context import ParallelContext
 from megatron.training.arguments import parse_args
 from megatron.training.arguments_fs import FSTrainArguments
-from megatron.core.tokenizers.text.libraries.null_tokenizer import NullTokenizer
 from tests.unit_tests.test_utilities import Utils as MegatronUtils
 
 
