@@ -68,7 +68,7 @@ jobs:
             --json-schema '{"type":"object","properties":{"is_flaky":{"type":"boolean","description":"Whether this appears to be a flaky test failure"},"confidence":{"type":"number","minimum":0,"maximum":1,"description":"Confidence level in the determination"},"summary":{"type":"string","description":"One-sentence explanation of the failure"}},"required":["is_flaky","confidence","summary"]}'
             --model ${{ vars.CLAUDE_MODEL }}
             --allowedTools 'Bash(gh *)' 'Read' 'Glob' 'Grep'
-            --max-turns 10
+            --max-turns 30
 
       - name: Debug detect output
         if: always()
