@@ -264,14 +264,14 @@ jobs:
           exit $exit_code
         timeout-minutes: 30
 
-      - name: Upload Functional Test Logs
-        if: always() && steps.functional_test.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: functional_tests-megatron-lm-fl-logs-${{ github.run_id }}-${{ matrix.test_config.task }}-${{ matrix.test_config.model }}
-          path: ${{ env.PROJECT_ROOT }}/tests/functional_tests/${{ matrix.test_config.task }}/${{ matrix.test_config.model }}/test_results
-          retention-days: 7
-          if-no-files-found: warn
+      # - name: Upload Functional Test Logs
+      #   if: always() && steps.functional_test.outcome == 'failure'
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: functional_tests-megatron-lm-fl-logs-${{ github.run_id }}-${{ matrix.test_config.task }}-${{ matrix.test_config.model }}
+      #     path: ${{ env.PROJECT_ROOT }}/tests/functional_tests/${{ matrix.test_config.task }}/${{ matrix.test_config.model }}/test_results
+      #     retention-days: 7
+      #     if-no-files-found: warn
 
   functional_test_hetero_train:
     needs: checkout_and_config
@@ -466,11 +466,11 @@ jobs:
           exit $exit_code
         timeout-minutes: 30
 
-      - name: Upload Functional Test Logs
-        if: always() && steps.functional_test.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: functional_tests-hetero-megatron-lm-fl-logs-${{ github.run_id }}-${{ matrix.test_config.task }}-${{ matrix.test_config.model }}
-          path: ${{ env.PROJECT_ROOT }}/tests/functional_tests/${{ matrix.test_config.task }}/${{ matrix.test_config.model }}/test_results
-          retention-days: 7
-          if-no-files-found: warn
+      # - name: Upload Functional Test Logs
+      #   if: always() && steps.functional_test.outcome == 'failure'
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: functional_tests-hetero-megatron-lm-fl-logs-${{ github.run_id }}-${{ matrix.test_config.task }}-${{ matrix.test_config.model }}
+      #     path: ${{ env.PROJECT_ROOT }}/tests/functional_tests/${{ matrix.test_config.task }}/${{ matrix.test_config.model }}/test_results
+      #     retention-days: 7
+      #     if-no-files-found: warn
