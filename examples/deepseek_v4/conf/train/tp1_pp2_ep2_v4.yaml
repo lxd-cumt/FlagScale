@@ -111,7 +111,9 @@ model:
   o_lora_rank: 128
   q_lora_rank: 128
   # csa_compress_ratios: "[128]*2+([128]+[4])*1+[128]"
-  csa_compress_ratios: "[0]*5" # only sliding window attention
+  # csa_compress_ratios: "[0]*5" # only sliding window attention
+  # csa_compress_ratios: "[128]*5" # only hca
+  csa_compress_ratios: "[0]+[128]+[0]+[128]*2" # sliding window attention + hca
 
   # mtp_args
   mtp_num_layers: 1
