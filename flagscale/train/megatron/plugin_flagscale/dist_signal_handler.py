@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_device(local_rank=None):
+    logger.info("FlagScale Plugin Decorator: Unsing overrided dist_singal_handler.get_device")
     backend = torch.distributed.get_backend()
     if backend == 'nccl':
         if local_rank is None:
