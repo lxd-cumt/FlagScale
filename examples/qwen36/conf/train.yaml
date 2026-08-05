@@ -1,6 +1,5 @@
 defaults:
   - _self_
-  # - train: 4b
   - train: 35b_a3b_llm
 
 experiment:
@@ -14,20 +13,30 @@ experiment:
     no_shared_fs: false
     per_node_task: false
     rdzv_backend: static
-    nnodes: 2
+    # nnodes: 2
+    # nproc_per_node: 8
+    # ssh_port: 2323 # use your ssh port
+    # hostfile: /share/project/lixianduo/envs/2nodes_hostfile
+    nnodes: 4
     nproc_per_node: 8
     ssh_port: 2323 # use your ssh port
-    hostfile: /share/project/lixianduo/envs/2nodes_hostfile
+    hostfile: /share/project/lixianduo/envs/4nodes_hostfile
     # nnodes: 1
     # nproc_per_node: 8
+    # nsys_bin_path:  /share/project/lixianduo/tools/nsys/bin/nsys
+    # nsys_rep_file_path: /share/project/lixianduo/profile-1/
   cmds:
     before_start: ulimit -n 1048576 && source /root/miniconda3/bin/activate /share/project/lixianduo/envs/fl-train-dma-cp
   envs:
     CUDA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
     CUDA_DEVICE_MAX_CONNECTIONS: 1
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
     NCCL_NVLS_ENABLE: 0
     NCCL_SOCKET_IFNAME: bond0
     GLOO_SOCKET_IFNAME: bond0
+    NCCL_IB_HCA: "mlx5_bond_0,mlx5_bond_1,mlx5_bond_2,mlx5_bond_3,mlx5_bond_4,mlx5_bond_5" # Select correct IB interface.
+    NCCL_IB_DISABLE: 0
+    NCCL_IB_GID_INDEX: 3
 
 action: run
 

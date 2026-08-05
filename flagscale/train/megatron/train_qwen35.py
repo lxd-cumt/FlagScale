@@ -101,6 +101,24 @@ def model_provider(
     args = get_args()
     print_rank_0("start building qwen3.5 model ...")
 
+    if args.record_memory_history:
+        torch.cuda.memory._record_memory_history(
+            True,
+            # keep 100,000 alloc/free events from before the snapshot
+            trace_alloc_max_entries=100000,
+            # record stack information for the trace events
+            trace_alloc_record_context=True,
+        )
+
+        def oom_observer(device, alloc, device_alloc, device_free):
+            # snapshot right after an OOM happened
+            print('saving allocated state during OOM')
+
+            filename = f"oom_rank-{torch.distributed.get_rank()}_{args.memory_snapshot_path}"
+            torch.cuda.memory._dump_snapshot(filename)
+
+        torch._C._cuda_attach_out_of_memory_observer(oom_observer)
+
     # Build transformer config with Qwen35 config class
     config = core_transformer_config_from_args(args, Qwen35TransformerConfig)
     # Qwen3.5 uses zero-centered gamma for RMSNorm; override if needed

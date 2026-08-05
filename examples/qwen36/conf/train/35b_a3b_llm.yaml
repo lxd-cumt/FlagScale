@@ -1,16 +1,16 @@
 system:
   num_workers: 1
   calculate_per_token_loss: true
-  tensor_model_parallel_size: 2
-  pipeline_model_parallel_size: 2
+  tensor_model_parallel_size: 4 # note: related-to num_query_groups and num_attention_heads
+  pipeline_model_parallel_size: 1
   context_parallel_size: 1
   expert_model_parallel_size: 2
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
   sequence_parallel: True
   tp_comm_overlap: False
-  overlap_grad_reduce: False
-  overlap_param_gather: False
+  overlap_grad_reduce: True # overlap all-reduce with backward propagation
+  overlap_param_gather: True # overlap parameter gather with computation
   # use_mcore_models: True # deprecated, mcore models are default
   transformer_impl: transformer_engine
   # use_te: True # deprecated, use ```transformer_impl: transformer_engine```
@@ -24,11 +24,13 @@ system:
     log_throughput: true
     log_params_norm: true
     log_num_zeros_in_grad: true
+  # memory:
+  #   record_memory_history: True
+  #   memory_snapshot_path: /share/project/lixianduo/memory_logs/memory_snapshot_16k_cold.pickle
   checkpoint:
-    save_interval: 100
+    save_interval: 1000
     ckpt_format: torch
-    load: /share/project/lixianduo/models/MG-TP2-PP2-EP2-Qwen3.6-35B-A3B
-    # load: /share/project/lixianduo/models/MG-PP2-EP4-Qwen3.6-35B-A3B
+    # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
 
 model:
   finetune: true
@@ -42,8 +44,9 @@ model:
   hidden_size: 2048
   num_attention_heads: 16
   num_query_groups: 2
-  seq_length: 2048
-  max_padding_length: 2048
+  ## sequence length
+  seq_length: 32768
+  max_padding_length: 32768
   # enable_variable_seq_lengths: True ## disabled, to avoid rebundant pp communication overhead
   max_position_embeddings: 262144
   swiglu: True
@@ -56,13 +59,6 @@ model:
   group_query_attention: True
   no_masked_softmax_fusion: True
   untie_embeddings_and_output_weights: True
-  
-  # training config
-  train_iters: 5000
-  eval_iters: 0
-  eval_interval: 1000
-  micro_batch_size: 1
-  global_batch_size: 8
   
   # Position embedding: Qwen3.5 uses mRoPE with partial rotary
   position_embedding_type: mrope
@@ -80,9 +76,13 @@ model:
   recompute:
     recompute_granularity: 'full'
     recompute_method: 'uniform'
+    # recompute_num_layers: 10 # consider num_layers_per_pp_rank
+    # recompute_num_layers: 5
     recompute_num_layers: 1
+    mtp_recompute_num_layers: 1 # decoupled llm and mtp recompute num layers, only support mtp_num_recompute_layers=1
 
-  seed: 42
+  no_check_for_nan_in_loss_and_grad: true
+  seed: 42 # to be checked
 
   # Gated DeltaNet (GDN) parameters
   experimental_attention_variant: gated_delta_net
@@ -109,24 +109,55 @@ model:
   moe_permute_fusion: True
   moe_aux_loss_coeff: 1.0e-3
 
+  # training configs
+  micro_batch_size: 1
+  # global_batch_size: 256
+  global_batch_size: 32 # to be checked
+  eval_iters: 0
+  eval_interval: 1000
+  train_samples: 2621440
+  # rampup_batch_size: [32, 32, 262144]
+
   optimizer:
+    optimizer: adam
+    loss_scale: 1.0
     weight_decay: 0.1
     adam_beta1: 0.9
-    adam_beta2: 0.999
+    adam_beta2: 0.95
+    adam_eps: 1.0e-08
     lr_scheduler:
-      lr: 5.0e-6
-      min_lr: 5.0e-7
-      lr_warmup_fraction: .03
+      lr: 1.0e-5
+      min_lr: 1.0e-6
+      lr_warmup_samples: 262144
       lr_decay_style: cosine
     
   ###### vision related args ######
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
   ###### vision related args ######
 
+  # # # Profiler
+  # profile: True
+  # profile_ranks: [7]
+  # profile_step_start: 2
+  # profile_step_end: 4
+  # use_pytorch_profiler: True
+  # pytorch_profiler_collect_shapes: True
+  # pytorch_profiler_collect_callstack: True
+  # pytorch_profiler_collect_memory: True
+
+  ## chunked cross-entropy ##
+  chunked_cross_entropy: True
+  # cross_entropy_chunk_size: 4096
+  cross_entropy_chunk_size: 2048  # optional, default to 4096
+  ## chunked cross-entropy ##
+
+
+
 # for text only qwen36 llm backbone
 data:
   reset_position_ids: True
   reset_attention_mask: True
+  no_create_attention_mask_in_dataloader: true
   data_path: /share/project/lixianduo/data/pile_wikipedia_demo/pile_wikipedia_demo
   split: 1
   no_mmap_bin_files: true
