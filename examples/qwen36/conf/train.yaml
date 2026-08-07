@@ -13,13 +13,9 @@ experiment:
     no_shared_fs: false
     per_node_task: false
     rdzv_backend: static
-    # nnodes: 2
-    # nproc_per_node: 8
-    # ssh_port: 2323 # use your ssh port
-    # hostfile: /share/project/lixianduo/envs/2nodes_hostfile
     nnodes: 4
     nproc_per_node: 8
-    ssh_port: 2323 # use your ssh port
+    ssh_port: 3232 # use your ssh port
     hostfile: /share/project/lixianduo/envs/4nodes_hostfile
     # nnodes: 1
     # nproc_per_node: 8

@@ -30,7 +30,7 @@ system:
   checkpoint:
     save_interval: 1000
     ckpt_format: torch
-    load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
+    # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
 
 model:
   finetune: true
