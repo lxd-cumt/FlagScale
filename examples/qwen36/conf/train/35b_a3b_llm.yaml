@@ -8,7 +8,7 @@ system:
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
   sequence_parallel: True
-  tp_comm_overlap: False
+  tp_comm_overlap: False # rely on TE support and custom hardware
   overlap_grad_reduce: True # overlap all-reduce with backward propagation
   overlap_param_gather: True # overlap parameter gather with computation
   # use_mcore_models: True # deprecated, mcore models are default
@@ -31,6 +31,7 @@ system:
     save_interval: 1000
     ckpt_format: torch
     load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
+    # load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
 
 model:
   finetune: true
@@ -52,7 +53,7 @@ model:
   swiglu: True
   normalization: RMSNorm
   norm_epsilon: 1e-6
-  init_method_std: 0.02
+  init_method_std: 6e-3
   attention_dropout: 0.0
   hidden_dropout: 0.0
   clip_grad: 1.0
@@ -63,14 +64,15 @@ model:
   # Position embedding: Qwen3.5 uses mRoPE with partial rotary
   position_embedding_type: mrope
   rotary_percent: 0.25
-  rotary_base: 10000000
+  rotary_base: 1000000
   rotary_seq_len_interpolation_factor: 1
   no_rope_fusion: False
   mrope_section: [11, 11, 10]
   eod_mask_loss: False
+  no_position_embedding: true
 
-  # mtp
-  mtp_num_layers: 1
+  # # mtp
+  # mtp_num_layers: 1
 
   # Recompute
   recompute:
@@ -82,7 +84,7 @@ model:
     mtp_recompute_num_layers: 1 # decoupled llm and mtp recompute num layers, only support mtp_num_recompute_layers=1
 
   no_check_for_nan_in_loss_and_grad: true
-  seed: 42 # to be checked
+  seed: 233 # to be checked
 
   # Gated DeltaNet (GDN) parameters
   experimental_attention_variant: gated_delta_net
@@ -112,12 +114,9 @@ model:
   # training configs
   micro_batch_size: 1
   global_batch_size: 256
-  # global_batch_size: 32 # to be checked
   eval_iters: 0
   eval_interval: 1000
-  train_samples: 2621440
-  # [start batch size, iteration grows, end samples to global_batch_size]
-  rampup_batch_size: [32, 32, 262144]
+  train_samples: 2097152
 
   optimizer:
     optimizer: adam
@@ -128,9 +127,9 @@ model:
     adam_eps: 1.0e-08
     lr_scheduler:
       lr: 1.0e-5
-      min_lr: 1.0e-6
-      lr_warmup_samples: 262144
-      lr_decay_style: cosine
+      min_lr: 1.0e-5
+      lr_warmup_samples: 0
+      lr_decay_style: constant
     
   ###### vision related args ######
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
@@ -159,7 +158,113 @@ data:
   reset_position_ids: True
   reset_attention_mask: True
   no_create_attention_mask_in_dataloader: true
-  data_path: /share/project/lixianduo/datasets/pile_wikipedia_demo/pile_wikipedia_demo
+  data_path:
+  - 1.66
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__Diverse-QA__part0_loss_text_document
+  - 1.67
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__Diverse-QA__part1_loss_text_document
+  - 1.73
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__Diverse-QA__part2_loss_text_document
+  - 1.69
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__Diverse-QA__part3_loss_text_document
+  - 1.51
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__Diverse-QA__part4_loss_text_document
+  - 1.5
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__High-Quality__part0_loss_text_document
+  - 1.27
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__High-Quality__part1_loss_text_document
+  - 1.37
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__High-Quality__part2_loss_text_document
+  - 1.87
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__High-Quality__part3_loss_text_document
+  - 1.35
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-CC-v2__High-Quality__part4_loss_text_document
+  - 19.36
+  - /share/project/lixianduo/datasets/Qwen/init_exp/Nemotron-CC-v2__High-Quality-Synthetic_text_document
+  - 3.01
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-CC-Math-v1__4plus_text_document
+  - 4.19
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-CC-Math-v1__4plus_MIND_text_document
+  - 0.63
+  - /share/project/lixianduo/datasets/Qwen/dolmino-mix-1124__math-merged_text_document
+  - 0.3
+  - /share/project/lixianduo/datasets/Qwen/OpenMathInstruct-2_text_document
+  - 0.02
+  - /share/project/lixianduo/datasets/Qwen/NuminaMath__1_5_text_document
+  - 0.14
+  - /share/project/lixianduo/datasets/Qwen/init_exp/OpenMathReasoning-4k_text_document
+  - 11.7
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-Pretraining-SFT-v1__Nemotron-SFT-MATH_text_document
+  - 1.85
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Python_text_document
+  - 1.27
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Java_text_document
+  - 1.2
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__JavaScript_text_document
+  - 0.52
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__C_text_document
+  - 1.33
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Cpp_text_document
+  - 0.44
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__CSharp_text_document
+  - 0.3
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__PHP_text_document
+  - 0.22
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__TypeScript_text_document
+  - 0.07
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Swift_text_document
+  - 0.44
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__SQL_text_document
+  - 0.01
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Ruby_text_document
+  - 0.45
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Markdown_text_document
+  - 0.06
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Rust_text_document
+  - 0.04
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Go_text_document
+  - 0.01
+  - /share/project/lixianduo/datasets/Qwen/stack-edu__Shell_text_document
+  - 0.3
+  - /share/project/lixianduo/datasets/Qwen/issues-kaggle-notebooks__issues_text_document
+  - 0.78
+  - /share/project/lixianduo/datasets/Qwen/issues-kaggle-notebooks__kaggle_text_document
+  - 10.86
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-Pretraining-Code-v1__Synthetic-Code_text_document
+  - 3.64
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-Pretraining-SFT-v1__Nemotron-SFT-Code_text_document
+  - 0.05
+  - /share/project/lixianduo/datasets/Qwen/init_exp/OpenCodeReasoning-2-cpp-4k_text_document
+  - 0.04
+  - /share/project/lixianduo/datasets/Qwen/init_exp/OpenCodeReasoning-2-python-4k_text_document
+  - 0.02
+  - /share/project/lixianduo/datasets/Qwen/stage2/github-codereview_text_document
+  - 0.1
+  - /share/project/lixianduo/datasets/Qwen/stage2/OpenCodeInstruct_text_document
+  - 0.5
+  - /share/project/lixianduo/datasets/Qwen/dolmino-mix-1124__pes2o_text_document
+  - 0.18
+  - /share/project/lixianduo/datasets/Qwen/dolmino-mix-1124__wiki_text_document
+  - 0.06
+  - /share/project/lixianduo/datasets/Qwen/dolmino-mix-1124__stackexchange_text_document
+  - 0.04
+  - /share/project/lixianduo/datasets/Qwen/MegaScience_text_document
+  - 0.08
+  - /share/project/lixianduo/datasets/Qwen/init_exp/OpenScienceReasoning-2-4k_text_document
+  - 4.0
+  - /share/project/lixianduo/datasets/Qwen/Nemotron-Pretraining-SFT-v1__SFT-General_text_document
+  - 3.18
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-Pretraining-Specialized-v1__part00_text_document
+  - 3.49
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-Pretraining-Specialized-v1__part01_text_document
+  - 3.25
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-Pretraining-Specialized-v1__part02_text_document
+  - 2.81
+  - /share/project/lixianduo/datasets/Qwen/loss/Nemotron-Pretraining-Specialized-v1__part03_text_document
+  - 0.42
+  - /share/project/lixianduo/datasets/Qwen/stage2/Nemotron-Pretraining-Specialized-v1.1_text_document
+  - 1.26
+  - /share/project/lixianduo/datasets/Qwen/BAAI__CCI4_0-Zh-High_text_document
   split: 1
   no_mmap_bin_files: true
   tokenizer:

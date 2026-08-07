@@ -30,7 +30,7 @@ from megatron.core import parallel_state
 from megatron.training.checkpointing import get_checkpoint_name
 from megatron.core.enums import ModelType
 from megatron.core.rerun_state_machine import get_rerun_state_machine
-from megatron.core.utils import StragglerDetector
+from megatron.core.utils import StragglerDetector, get_attr_wrapped_model
 
 from megatron.training.utils import unwrap_model
 from megatron.training import get_args, get_timers, get_tokenizer, print_rank_0
@@ -467,13 +467,14 @@ def write_online_eval_to_tensorboard(data, iteration, writer):
 from flagscale.train.megatron.train_gpt import (
     get_batch as get_batch_gpt,
     train_valid_test_datasets_provider as train_valid_test_datasets_provider_gpt,
+    get_embedding_ranks,
 )
 
 
-def get_batch_text(data_iterator):
+def get_batch_text(data_iterator, vp_stage: Optional[int] = None):
     """Generate a batch for text-only training (GPT-style), with mRoPE position_ids."""
     tokens, labels, loss_mask, attention_mask, position_ids, packed_seq_params = get_batch_gpt(
-        data_iterator
+        data_iterator, vp_stage
     )
 
     # Expand position_ids from [B, S] to [3, B, S] for mRoPE (text-only: all 3 dims identical)
@@ -483,7 +484,7 @@ def get_batch_text(data_iterator):
     return tokens, labels, loss_mask, attention_mask, position_ids, packed_seq_params
 
 
-def forward_step_text(data_iterator, model: Qwen35Model):
+def forward_step_text(data_iterator, model: Qwen35Model, return_schedule_plan: bool = False):
     """Forward training step for text-only mode."""
     args = get_args()
     timers = get_timers()
@@ -491,20 +492,29 @@ def forward_step_text(data_iterator, model: Qwen35Model):
     timers('batch-generator', log_level=2).start()
     global stimer
     with stimer(bdata=True):
+        vp_stage = get_attr_wrapped_model(model, "vp_stage")
         tokens, labels, loss_mask, attention_mask, position_ids, packed_seq_params = get_batch_text(
-            data_iterator
+            data_iterator, vp_stage
         )
     timers('batch-generator').stop()
 
     with stimer:
-        output_tensor = model(
-            input_ids=tokens,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            loss_mask=loss_mask,
-            packed_seq_params=packed_seq_params,
-        )
+        if return_schedule_plan:
+            assert args.overlap_moe_expert_parallel_comm, \
+                "overlap_moe_expert_parallel_comm must be enabled to return the schedule plan"
+            schedule_plan = model.build_schedule_plan(
+                tokens, position_ids, attention_mask, labels=labels, loss_mask=loss_mask
+            )
+            return schedule_plan, partial(loss_func, loss_mask, model=model)
+        else:
+            output_tensor = model(
+                input_ids=tokens,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                labels=labels,
+                loss_mask=loss_mask,
+                packed_seq_params=packed_seq_params,
+            )
 
     return output_tensor, partial(loss_func, loss_mask, model=model)
 
@@ -714,4 +724,5 @@ if __name__ == "__main__":
             forward_step_text,
             args_defaults={'tokenizer_type': 'HFTokenizerFS'},
             extra_args_provider=add_qwen35_extra_args,
+            get_embedding_ranks=get_embedding_ranks,
         )

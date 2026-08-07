@@ -3,7 +3,7 @@ defaults:
   - train: 35b_a3b_llm
 
 experiment:
-  exp_name: Qwen-36-35B-A3B-LLM-BACKBONE
+  exp_name: EXP-TRAIN-1-Qwen-36-35B-A3B-LLM-BACKBONE-FLASH
   exp_dir: /share/project/lixianduo/exps/${experiment.exp_name}
   task:
     type: train
@@ -13,10 +13,14 @@ experiment:
     no_shared_fs: false
     per_node_task: false
     rdzv_backend: static
-    nnodes: 4
+    nnodes: 8
     nproc_per_node: 8
     ssh_port: 3232 # use your ssh port
-    hostfile: /share/project/lixianduo/envs/4nodes_hostfile
+    hostfile: /share/project/lixianduo/envs/8nodes_hostfile
+    # nnodes: 4
+    # nproc_per_node: 8
+    # ssh_port: 3232 # use your ssh port
+    # hostfile: /share/project/lixianduo/envs/4nodes_hostfile
     # nnodes: 1
     # nproc_per_node: 8
     # nsys_bin_path:  /share/project/lixianduo/tools/nsys/bin/nsys
