@@ -219,18 +219,30 @@ class Qwen35SelfAttention(SelfAttention):
                 cu_kv_lengths, kv_lengths, kv_lengths_decode_only, max_seqlen_k = (
                     inference_context.cu_kv_lengths()
                 )
-                core_attn_out = self.flash_decode_and_prefill(
-                    q,
-                    k,
-                    v,
-                    max_seqlen_q,
-                    max_seqlen_k,
-                    cu_query_lengths,
-                    cu_kv_lengths,
-                    kv_lengths,
-                    kv_lengths_decode_only,
-                    block_table,
-                )
+                if self.config.attention_backend == AttnBackend.fsa:
+                    core_attn_out = self.flash_sparse_decode_and_prefill(
+                        q,
+                        k,
+                        v,
+                        max_seqlen_q,
+                        max_seqlen_k,
+                        cu_query_lengths,
+                        cu_kv_lengths,
+                        kv_lengths,
+                    )
+                else:
+                    core_attn_out = self.flash_decode_and_prefill(
+                        q,
+                        k,
+                        v,
+                        max_seqlen_q,
+                        max_seqlen_k,
+                        cu_query_lengths,
+                        cu_kv_lengths,
+                        kv_lengths,
+                        kv_lengths_decode_only,
+                        block_table,
+                    )
                 core_attn_out = rearrange(core_attn_out, "s b h d -> s b (h d)")
 
         if packed_seq_params is not None and packed_seq_params.qkv_format == "thd":

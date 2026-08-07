@@ -28,7 +28,7 @@ system:
   #   record_memory_history: True
   #   memory_snapshot_path: /share/project/lixianduo/memory_logs/memory_snapshot_16k_cold.pickle
   checkpoint:
-    save_interval: 1000
+    save_interval: 100
     ckpt_format: torch
     load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
     # load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
@@ -69,7 +69,7 @@ model:
   no_rope_fusion: False
   mrope_section: [11, 11, 10]
   eod_mask_loss: False
-  no_position_embedding: true
+  # no_position_embedding: true # deprecated for newest megatron, use 'position_embedding_type' instead
 
   # # mtp
   # mtp_num_layers: 1
