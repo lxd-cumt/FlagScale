@@ -48,8 +48,12 @@ model:
   ## sequence length
   # seq_length: 32768
   # max_padding_length: 32768
-  seq_length: 40960
-  max_padding_length: 40960
+  # seq_length: 40960
+  # max_padding_length: 40960
+  # seq_length: 49152
+  # max_padding_length: 49152
+  seq_length: 65536
+  max_padding_length: 65536
   # enable_variable_seq_lengths: True ## disabled, to avoid rebundant pp communication overhead
   max_position_embeddings: 262144 # max length for qwen3.6 rope
   swiglu: True
@@ -63,17 +67,22 @@ model:
   no_masked_softmax_fusion: True
   untie_embeddings_and_output_weights: True
   
-  # Position embedding: Qwen3.5 uses mRoPE with partial rotary
-  # position_embedding_type: mrope
+
+  # Position embedding: rope for text model
   position_embedding_type: rope
   use_rotary_position_embeddings: true
-  rotary_percent: 0.25
-  rotary_base: 1000000
-  rotary_seq_len_interpolation_factor: 1
-  no_rope_fusion: False
+  no_rope_fusion: True
+
+
+  # # Position embedding: Qwen3.5 uses mRoPE with partial rotary
+  # position_embedding_type: mrope
+  # rotary_percent: 0.25
+  # rotary_base: 1000000
+  # rotary_seq_len_interpolation_factor: 1
+  # no_rope_fusion: False
   # mrope_section: [11, 11, 10]
-  eod_mask_loss: False
-  # no_position_embedding: true # deprecated for newest megatron, use 'position_embedding_type' instead
+  # eod_mask_loss: False
+  # # no_position_embedding: true # deprecated for newest megatron, use 'position_embedding_type' instead
 
   # # mtp
   # mtp_num_layers: 1
