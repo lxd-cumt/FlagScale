@@ -16,7 +16,8 @@ experiment:
     nnodes: 8
     nproc_per_node: 8
     ssh_port: 3232 # use your ssh port
-    hostfile: /share/project/lixianduo/envs/last_8nodes_hostfile
+    # hostfile: /share/project/lixianduo/envs/last_8nodes_hostfile
+    hostfile: /share/project/lixianduo/envs/8nodes_hostfile
     # nnodes: 1
     # nproc_per_node: 8
     # nsys_bin_path:  /share/project/lixianduo/tools/nsys/bin/nsys
