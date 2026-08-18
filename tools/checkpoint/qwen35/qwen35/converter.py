@@ -286,6 +286,10 @@ class BaseConverter:
                     shards[r][k] = v
                 continue
 
+            # Skip MTP weights when MTP is disabled
+            if "mtp" in k and cfg.mtp_num_layers == 0:
+                continue
+
             # Embedding / output layer
             if k in (
                 "language_model.embedding.word_embeddings.weight",
@@ -298,6 +302,9 @@ class BaseConverter:
 
             # Vision model
             if "vision_model" in k:
+                if not cfg.enable_vision:
+                    # Vision weights exist but vision is disabled in config, skip
+                    continue
                 if "patch_embed" in k or "pos_embed" in k or "final_layernorm" in k:
                     for r in range(tp):
                         shards[r][k] = v
@@ -449,7 +456,14 @@ class BaseConverter:
             if not vals or not isinstance(vals[0], torch.Tensor):
                 continue
 
+            # Skip MTP weights when MTP is disabled
+            if "mtp" in k and cfg.mtp_num_layers == 0:
+                continue
+
             if "vision_model" in k:
+                if not cfg.enable_vision:
+                    # Vision weights exist in checkpoint but vision is disabled in config, skip
+                    continue
                 if "patch_embed" in k or "pos_embed" in k:
                     merged[k] = vals[0]
                 elif "linear_qkv.weight" in k:
