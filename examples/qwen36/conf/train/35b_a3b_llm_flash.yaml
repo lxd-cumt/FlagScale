@@ -55,7 +55,7 @@ model:
   group_query_attention: True
   no_masked_softmax_fusion: True
   untie_embeddings_and_output_weights: True
-  
+
   # Position embedding: Qwen3.5 uses mRoPE with partial rotary
   position_embedding_type: mrope
   rotary_percent: 0.25
@@ -119,7 +119,7 @@ model:
       min_lr: 1.0e-5
       lr_warmup_samples: 0
       lr_decay_style: constant
-    
+
   ###### vision related args ######
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
   ###### vision related args ######

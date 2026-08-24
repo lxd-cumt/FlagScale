@@ -51,6 +51,7 @@ def _patch_attn_backend_enum():
     """
     try:
         from megatron.core.transformer.enums import AttnBackend
+
         _expected = {"fsa": 6}
         for name, value in _expected.items():
             if value not in AttnBackend._value2member_map_:
