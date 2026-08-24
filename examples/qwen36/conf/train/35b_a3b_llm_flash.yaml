@@ -27,8 +27,7 @@ system:
   checkpoint:
     save_interval: 100
     ckpt_format: torch
-    # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
-    # load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
+    load: xxx/TP4-EP2-CKPT
 
 model:
   finetune: true
@@ -138,100 +137,12 @@ data:
   reset_position_ids: True
   reset_attention_mask: True
   no_create_attention_mask_in_dataloader: true
-  data_path:
-  - 1.66
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__Diverse-QA__part0_loss_text_document
-  - 1.51
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__Diverse-QA__part4_loss_text_document
-  - 1.5
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__High-Quality__part0_loss_text_document
-  - 1.27
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__High-Quality__part1_loss_text_document
-  - 1.37
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__High-Quality__part2_loss_text_document
-  - 1.35
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__High-Quality__part4_loss_text_document
-  - 3.01
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-CC-Math-v1__4plus_text_document
-  - 4.19
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-CC-Math-v1__4plus_MIND_text_document
-  - 0.63
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__math-merged_text_document
-  - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/OpenMathInstruct-2_text_document
-  - 0.02
-  - /share/project/lixianduo/datasets/Qwen36-all/NuminaMath__1_5_text_document
-  - 0.14
-  - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenMathReasoning-4k_text_document
-  - 1.85
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Python_text_document
-  - 1.27
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Java_text_document
-  - 1.2
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__JavaScript_text_document
-  - 0.52
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__C_text_document
-  - 1.33
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Cpp_text_document
-  - 0.44
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__CSharp_text_document
-  - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__PHP_text_document
-  - 0.22
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__TypeScript_text_document
-  - 0.07
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Swift_text_document
-  - 0.44
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__SQL_text_document
-  - 0.01
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Ruby_text_document
-  - 0.45
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Markdown_text_document
-  - 0.06
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Rust_text_document
-  - 0.04
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Go_text_document
-  - 0.01
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Shell_text_document
-  - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/issues-kaggle-notebooks__issues_text_document
-  - 0.78
-  - /share/project/lixianduo/datasets/Qwen36-all/issues-kaggle-notebooks__kaggle_text_document
-  - 3.64
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-Pretraining-SFT-v1__Nemotron-SFT-Code_text_document
-  - 0.05
-  - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenCodeReasoning-2-cpp-4k_text_document
-  - 0.04
-  - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenCodeReasoning-2-python-4k_text_document
-  - 0.02
-  - /share/project/lixianduo/datasets/Qwen36/stage2/github-codereview_text_document
-  - 0.1
-  - /share/project/lixianduo/datasets/Qwen36/stage2/OpenCodeInstruct_text_document
-  - 0.5
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__pes2o_text_document
-  - 0.18
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__wiki_text_document
-  - 0.06
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__stackexchange_text_document
-  - 0.04
-  - /share/project/lixianduo/datasets/Qwen36-all/MegaScience_text_document
-  - 0.08
-  - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenScienceReasoning-2-4k_text_document
-  - 3.18
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-Pretraining-Specialized-v1__part00_text_document
-  - 3.49
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-Pretraining-Specialized-v1__part01_text_document
-  - 3.25
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-Pretraining-Specialized-v1__part02_text_document
-  - 2.81
-  - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-Pretraining-Specialized-v1__part03_text_document
-  - 0.42
-  - /share/project/lixianduo/datasets/Qwen36/stage2/Nemotron-Pretraining-Specialized-v1.1_text_document
+  data_path: xxx
   split: 1
   no_mmap_bin_files: true
   tokenizer:
     tokenizer_type: HFTokenizerFS
-    tokenizer_path: /share/project/lixianduo/models/Qwen3.6-35B-A3B
+    tokenizer_path: models/Qwen3.6-35B-A3B
     vocab_size: 248320 # not used, when building tokenizer, using tokenizer.vocab_size directly, but tokenizer.vocab_size do not include added vocabs
     padded_vocab_size: 248320 # to avoid padding vocab size to ceil(tp*...)
     make_vocab_size_divisible_by: 64
