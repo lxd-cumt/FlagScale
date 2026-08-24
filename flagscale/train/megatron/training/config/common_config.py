@@ -43,7 +43,7 @@ class ProfilingConfig:
 
     pytorch_profiler_collect_shapes: bool = False
     """Collect tensor shape in pytorch profiler."""
-  
+
     pytorch_profiler_collect_callstack: bool = False
     """Collect callstack in pytorch profiler."""
 
@@ -74,7 +74,7 @@ class ProfilingConfig:
 class DistributedInitConfig:
     """Configuration settings for distributed training initialization."""
 
-    distributed_backend: Literal["nccl", "gloo", "flagcx"] = "nccl"
+    distributed_backend: Literal["nccl", "gloo", "flagcx", "mccl"] = "nccl"
     """Which backend to use for distributed training."""
 
     distributed_timeout_minutes: int = 10

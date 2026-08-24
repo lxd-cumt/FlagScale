@@ -70,7 +70,6 @@ from megatron.energon import (
 from megatron.training.tokenizer.tokenizer import build_tokenizer
 from megatron.training.global_vars import get_tokenizer
 
-
 from flagscale.models.megatron.qwen2_5_vl.tensor_parallel import broadcast_data
 
 from flagscale.models.megatron.qwen35.qwen35_model import Qwen35Model
@@ -201,8 +200,6 @@ def model_provider(
         freeze_vision_model=args.freeze_ViT if enable_vision else False,
         freeze_vision_projection=False,
     )
-
-    print(f"train qwen35, {model=}")
 
     return model
 
