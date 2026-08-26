@@ -1,7 +1,7 @@
 system:
   num_workers: 1
   calculate_per_token_loss: true
-  tensor_model_parallel_size: 4 # note: related-to num_query_groups and num_attention_heads
+  tensor_model_parallel_size: 2 # reduced from 4 to enable DP=2 on single node
   pipeline_model_parallel_size: 1
   context_parallel_size: 1
   expert_model_parallel_size: 2
@@ -41,7 +41,7 @@ model:
   kv_channels: 256
   qk_layernorm: True
   disable_bias_linear: True
-  num_layers: 20
+  num_layers: 10  # reduced from 20 to avoid OOM with TP=2
   hidden_size: 2048
   num_attention_heads: 16
   num_query_groups: 2
@@ -138,8 +138,8 @@ model:
   # # Profiler
   profile: True
   profile_ranks: [7]
-  profile_step_start: 2
-  profile_step_end: 4
+  profile_step_start: 9
+  profile_step_end: 10
   use_pytorch_profiler: False
   # use_pytorch_profiler: True
   # pytorch_profiler_collect_shapes: True

@@ -22,7 +22,7 @@ experiment:
     before_start: ulimit -n 1048576 && source /root/miniconda3/bin/activate /share/project/lixianduo/envs/fsa-train
   envs:
     CUDA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
-    CUDA_DEVICE_MAX_CONNECTIONS: 1
+    CUDA_DEVICE_MAX_CONNECTIONS: 1 # Using tensor model parallelism or context parallelism require setting the environment variable CUDA_DEVICE_MAX_CONNECTIONS to 1
     PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
     # NCCL_NVLS_ENABLE: 0
     NCCL_SOCKET_IFNAME: bond0
