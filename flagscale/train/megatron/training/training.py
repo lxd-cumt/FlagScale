@@ -3248,9 +3248,6 @@ def train(
         energy_monitor.setup()
         energy_monitor.resume()
 
-    # Release reserved memory from checkpoint loading before training starts.
-    torch.cuda.empty_cache()
-
     timers("interval-time", log_level=0).start(barrier=True)
     print_datetime("before the start of training step")
 
