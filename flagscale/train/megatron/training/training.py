@@ -3248,8 +3248,8 @@ def train(
         energy_monitor.setup()
         energy_monitor.resume()
 
-    timers("interval-time", log_level=0).start(barrier=True)
-    print_datetime("before the start of training step")
+    timers('interval-time', log_level=0).start(barrier=True)
+    print_datetime('before the start of training step')
     report_memory_flag = True
     perf_callback = initialize_perf_monitor(args)
     pre_hook_enabled = False
