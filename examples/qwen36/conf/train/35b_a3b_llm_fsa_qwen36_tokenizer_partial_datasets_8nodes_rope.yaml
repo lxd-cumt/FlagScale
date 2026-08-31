@@ -1,7 +1,7 @@
 system:
   num_workers: 1
   calculate_per_token_loss: true
-  tensor_model_parallel_size: 4
+  tensor_model_parallel_size: 4 # note: related-to num_query_groups and num_attention_heads
   pipeline_model_parallel_size: 1
   context_parallel_size: 1
   expert_model_parallel_size: 2
@@ -61,15 +61,24 @@ model:
   no_masked_softmax_fusion: True
   untie_embeddings_and_output_weights: True
   
-  # Position embedding: Qwen3.5 uses mRoPE with partial rotary
-  position_embedding_type: mrope
-  rotary_percent: 0.25
-  rotary_base: 1000000
+  # Position embedding: rope for text model
+  position_embedding_type: rope
+  use_rotary_position_embeddings: true
+  rotary_percent: 0.25                    # keep consistent with mrope for qwen3.6
+  rotary_base: 1000000                    # keep consistent with mrope for qwen3.6
   rotary_seq_len_interpolation_factor: 1
-  no_rope_fusion: False
-  mrope_section: [11, 11, 10]
-  eod_mask_loss: False
-  # no_position_embedding: true # deprecated for newest megatron, use 'position_embedding_type' instead
+  no_rope_fusion: True
+
+
+  # # Position embedding: Qwen3.5 uses mRoPE with partial rotary
+  # position_embedding_type: mrope
+  # rotary_percent: 0.25
+  # rotary_base: 1000000
+  # rotary_seq_len_interpolation_factor: 1
+  # no_rope_fusion: False
+  # mrope_section: [11, 11, 10]
+  # eod_mask_loss: False
+  # # no_position_embedding: true # deprecated for newest megatron, use 'position_embedding_type' instead
 
   # # mtp
   # mtp_num_layers: 1
@@ -113,7 +122,7 @@ model:
 
   # training configs
   micro_batch_size: 1
-  global_batch_size: 32
+  global_batch_size: 256
   eval_iters: 0
   eval_interval: 1000
   train_samples: 2097152
@@ -135,12 +144,11 @@ model:
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
   ###### vision related args ######
 
-  # # Profiler
-  profile: True
-  profile_ranks: [7]
-  profile_step_start: 3
-  profile_step_end: 4
-  use_pytorch_profiler: False
+  # # # Profiler
+  # profile: True
+  # profile_ranks: [7]
+  # profile_step_start: 2
+  # profile_step_end: 4
   # use_pytorch_profiler: True
   # pytorch_profiler_collect_shapes: True
   # pytorch_profiler_collect_callstack: True
