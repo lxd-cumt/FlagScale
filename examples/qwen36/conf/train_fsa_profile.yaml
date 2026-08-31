@@ -16,6 +16,7 @@ experiment:
     nnodes: 4
     nproc_per_node: 8
     hostfile: /share/project/lixianduo/envs/4nodes_hostfile
+    ssh_port: 3232 # use your ssh port
     nsys_bin_path:  /share/project/lixianduo/tools/profile/nsight-systems/bin/nsys
     nsys_rep_file_path: /share/project/lixianduo/perf/
   cmds:
