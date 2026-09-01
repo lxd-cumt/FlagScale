@@ -1,10 +1,10 @@
 system:
   num_workers: 1
   calculate_per_token_loss: true
-  tensor_model_parallel_size: 4
+  tensor_model_parallel_size: 1
   pipeline_model_parallel_size: 1
   context_parallel_size: 1
-  expert_model_parallel_size: 1
+  expert_model_parallel_size: 4
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
   sequence_parallel: True

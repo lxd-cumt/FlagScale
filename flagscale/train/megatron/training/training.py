@@ -3460,6 +3460,11 @@ def train(
             optimizers=[optimizer],
         )
 
+    # Enable NVTX range annotations if requested.
+    if getattr(args, 'nvtx_ranges', False):
+        from megatron.core.utils import configure_nvtx_profiling
+        configure_nvtx_profiling(True)
+
     # Run training iterations till done.
     buffered_rollouts = None
     while iteration < args.train_iters:
