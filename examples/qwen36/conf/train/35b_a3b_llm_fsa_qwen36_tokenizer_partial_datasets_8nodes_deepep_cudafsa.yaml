@@ -4,12 +4,6 @@ system:
   tensor_model_parallel_size: 2 # note: related-to num_query_groups and num_attention_heads
   pipeline_model_parallel_size: 1
   context_parallel_size: 1
-  # ### context parallel for long sequence training
-  # context_parallel_size: 2
-  # linear_cp_mode: headwise # cp mode for gdn
-  # fsa_cp_mode: headwise # cp mode for fsa
-  # # cp_comm_type # for flash-attn
-  # ### context parallel for long sequence training
   expert_model_parallel_size: 4
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
@@ -42,7 +36,7 @@ system:
 model:
   finetune: true
   # attention_backend: flash
-  attention_backend: fsa # triton now
+  attention_backend: fsa
   # Qwen3.6-35B-A3B (MoE) architecture parameters
   kv_channels: 256
   qk_layernorm: True
@@ -67,6 +61,7 @@ model:
   no_masked_softmax_fusion: True
   untie_embeddings_and_output_weights: True
   
+
   # # Position embedding: rope for text model
   # position_embedding_type: rope
   # use_rotary_position_embeddings: true
@@ -89,22 +84,14 @@ model:
   # # mtp
   # mtp_num_layers: 1
 
-  # Recompute - selective (with CP=2 to reduce per-rank activation memory)
-  # recompute:
-  #   recompute_granularity: 'selective'
-  #   recompute_modules:
-  #     - "core_attn"
-  #     - "layernorm"
-  #     - "moe_act"
-  #     - "shared_experts"
-  #     - "moe"
-
+  # Recompute
   recompute:
     recompute_granularity: 'full'
     recompute_method: 'uniform'
+    # recompute_num_layers: 10 # consider num_layers_per_pp_rank
+    # recompute_num_layers: 5
     recompute_num_layers: 1
     mtp_recompute_num_layers: 1 # decoupled llm and mtp recompute num layers, only support mtp_num_recompute_layers=1
-
 
   no_check_for_nan_in_loss_and_grad: true
   seed: 233 # to be checked
@@ -130,14 +117,13 @@ model:
   moe_router_load_balancing_type: global_aux_loss
   moe_router_pre_softmax: False
   moe_grouped_gemm: True
-  # moe_token_dispatcher_type: alltoall # configed in following
+  # moe_token_dispatcher_type: alltoall
   moe_permute_fusion: True
   moe_aux_loss_coeff: 1.0e-3
 
   # training configs
   micro_batch_size: 1
-  global_batch_size: 32
-  # global_batch_size: 256
+  global_batch_size: 256
   eval_iters: 0
   eval_interval: 1000
   train_samples: 2097152
@@ -159,13 +145,11 @@ model:
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
   ###### vision related args ######
 
-  # # Profiler
-  profile: True
-  profile_ranks: [7]
-  profile_step_start: 9
-  profile_step_end: 10
-  use_pytorch_profiler: False
-  nvtx_ranges: true
+  # # # Profiler
+  # profile: True
+  # profile_ranks: [7]
+  # profile_step_start: 2
+  # profile_step_end: 4
   # use_pytorch_profiler: True
   # pytorch_profiler_collect_shapes: True
   # pytorch_profiler_collect_callstack: True
@@ -174,25 +158,17 @@ model:
   ## chunked cross-entropy ##
   chunked_cross_entropy: True
   # cross_entropy_chunk_size: 4096
-  cross_entropy_chunk_size: 1024  # optional, default to 4096
+  # cross_entropy_chunk_size: 2048  # optional, default to 4096
+  cross_entropy_chunk_size: 1024
   ## chunked cross-entropy ##
 
-
   ## performance optimizations ###
-  # 1. base: TP4EP2, full recompute, triton fsa. Perf: mem-60GB, comp-31.4
-  
-  # 2. fused zigzag transpose. Perf: mem-60GB, comp-31.3
-  # fsa_use_fused_kernels: True
-
-  # 3. deepep. Perf: mem-65GB, comp-55.6
   # moe_token_dispatcher_type: alltoall
   moe_token_dispatcher_type: flex
   moe_flex_dispatcher_backend: deepep
   moe_deepep_num_sms: 20
-
-  # 4. fsa cuda kernels
+  # fsa use cuda kernels, default triton
   fsa_use_cuda: True
-
   ## performance optimizations ##
 
 
