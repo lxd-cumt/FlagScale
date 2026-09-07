@@ -216,53 +216,53 @@ data:
   - 1.35
   - /share/project/lixianduo/datasets/Qwen36/loss/Nemotron-CC-v2__High-Quality__part4_loss_text_document
   - 3.01
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-CC-Math-v1__4plus_text_document
+  - /share/project/lixianduo/datasets/Qwen36/Nemotron-CC-Math-v1__4plus_text_document
   - 4.19
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-CC-Math-v1__4plus_MIND_text_document
+  - /share/project/lixianduo/datasets/Qwen36/Nemotron-CC-Math-v1__4plus_MIND_text_document
   - 0.63
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__math-merged_text_document
+  - /share/project/lixianduo/datasets/Qwen36/dolmino-mix-1124__math-merged_text_document
   - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/OpenMathInstruct-2_text_document
+  - /share/project/lixianduo/datasets/Qwen36/OpenMathInstruct-2_text_document
   - 0.02
-  - /share/project/lixianduo/datasets/Qwen36-all/NuminaMath__1_5_text_document
+  - /share/project/lixianduo/datasets/Qwen36/NuminaMath__1_5_text_document
   - 0.14
   - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenMathReasoning-4k_text_document
   - 1.85
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Python_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Python_text_document
   - 1.27
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Java_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Java_text_document
   - 1.2
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__JavaScript_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__JavaScript_text_document
   - 0.52
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__C_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__C_text_document
   - 1.33
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Cpp_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Cpp_text_document
   - 0.44
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__CSharp_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__CSharp_text_document
   - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__PHP_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__PHP_text_document
   - 0.22
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__TypeScript_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__TypeScript_text_document
   - 0.07
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Swift_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Swift_text_document
   - 0.44
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__SQL_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__SQL_text_document
   - 0.01
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Ruby_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Ruby_text_document
   - 0.45
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Markdown_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Markdown_text_document
   - 0.06
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Rust_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Rust_text_document
   - 0.04
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Go_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Go_text_document
   - 0.01
-  - /share/project/lixianduo/datasets/Qwen36-all/stack-edu__Shell_text_document
+  - /share/project/lixianduo/datasets/Qwen36/stack-edu__Shell_text_document
   - 0.3
-  - /share/project/lixianduo/datasets/Qwen36-all/issues-kaggle-notebooks__issues_text_document
+  - /share/project/lixianduo/datasets/Qwen36/issues-kaggle-notebooks__issues_text_document
   - 0.78
-  - /share/project/lixianduo/datasets/Qwen36-all/issues-kaggle-notebooks__kaggle_text_document
+  - /share/project/lixianduo/datasets/Qwen36/issues-kaggle-notebooks__kaggle_text_document
   - 3.64
-  - /share/project/lixianduo/datasets/Qwen36-all/Nemotron-Pretraining-SFT-v1__Nemotron-SFT-Code_text_document
+  - /share/project/lixianduo/datasets/Qwen36/Nemotron-Pretraining-SFT-v1__Nemotron-SFT-Code_text_document
   - 0.05
   - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenCodeReasoning-2-cpp-4k_text_document
   - 0.04
@@ -272,13 +272,13 @@ data:
   - 0.1
   - /share/project/lixianduo/datasets/Qwen36/stage2/OpenCodeInstruct_text_document
   - 0.5
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__pes2o_text_document
+  - /share/project/lixianduo/datasets/Qwen36/dolmino-mix-1124__pes2o_text_document
   - 0.18
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__wiki_text_document
+  - /share/project/lixianduo/datasets/Qwen36/dolmino-mix-1124__wiki_text_document
   - 0.06
-  - /share/project/lixianduo/datasets/Qwen36-all/dolmino-mix-1124__stackexchange_text_document
+  - /share/project/lixianduo/datasets/Qwen36/dolmino-mix-1124__stackexchange_text_document
   - 0.04
-  - /share/project/lixianduo/datasets/Qwen36-all/MegaScience_text_document
+  - /share/project/lixianduo/datasets/Qwen36/MegaScience_text_document
   - 0.08
   - /share/project/lixianduo/datasets/Qwen36/init_exp/OpenScienceReasoning-2-4k_text_document
   - 3.18
