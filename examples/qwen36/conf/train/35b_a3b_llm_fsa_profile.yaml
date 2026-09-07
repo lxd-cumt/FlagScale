@@ -34,7 +34,7 @@ system:
   #   record_memory_history: True
   #   memory_snapshot_path: /share/project/lixianduo/memory_logs/memory_snapshot_16k_cold.pickle
   checkpoint:
-    save_interval: 100
+    save_interval: 1000
     ckpt_format: torch
     # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
     load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
@@ -136,7 +136,7 @@ model:
 
   # training configs
   micro_batch_size: 1
-  global_batch_size: 32
+  global_batch_size: 64
   # global_batch_size: 256
   eval_iters: 0
   eval_interval: 1000
@@ -174,7 +174,7 @@ model:
   ## chunked cross-entropy ##
   chunked_cross_entropy: True
   # cross_entropy_chunk_size: 4096
-  cross_entropy_chunk_size: 512  # optional, default to 4096
+  cross_entropy_chunk_size: 1024  # optional, default to 4096
   ## chunked cross-entropy ##
 
 
@@ -188,7 +188,8 @@ model:
   # moe_token_dispatcher_type: alltoall
   moe_token_dispatcher_type: flex
   moe_flex_dispatcher_backend: deepep
-  moe_deepep_num_sms: 20
+  # moe_deepep_num_sms: 20
+  moe_deepep_num_sms: 100
 
   # 4. fsa cuda kernels
   fsa_use_cuda: True

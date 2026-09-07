@@ -28,7 +28,7 @@ system:
   #   record_memory_history: True
   #   memory_snapshot_path: /share/project/lixianduo/memory_logs/memory_snapshot_16k_cold.pickle
   checkpoint:
-    save_interval: 100
+    save_interval: 1000
     ckpt_format: torch
     # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
     load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
@@ -166,7 +166,10 @@ model:
   # moe_token_dispatcher_type: alltoall
   moe_token_dispatcher_type: flex
   moe_flex_dispatcher_backend: deepep
-  moe_deepep_num_sms: 20
+  # moe_deepep_num_sms: 20
+  # moe_deepep_num_sms: 40
+  # moe_deepep_num_sms: 80
+  moe_deepep_num_sms: 100
   # fsa use cuda kernels, default triton
   fsa_use_cuda: True
   ## performance optimizations ##
