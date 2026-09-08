@@ -76,8 +76,13 @@ def get_batch(data_iterator, vp_stage: Optional[int] = None):
     config = core_transformer_config_from_args(args)
     # TODO: this is pretty hacky, find a better way
     is_packed_sequence = get_args().sft  # SFT always uses packed sequence
+    # For mrope (multimodal RoPE), intermediate stages need position_ids to compute rotary embeddings
+    needs_batch_for_mrope = (
+        hasattr(args, 'position_embedding_type') and args.position_embedding_type == 'mrope'
+    )
     if not is_first_or_last_pipeline_stage(vp_stage) and not is_packed_sequence and (
-    (not mtp_on_this_rank(config, ignore_virtual=False, vp_stage=vp_stage))):
+    (not mtp_on_this_rank(config, ignore_virtual=False, vp_stage=vp_stage))) and (
+    not needs_batch_for_mrope):
         return None, None, None, None, None, None
 
     # get batches based on the TP rank you are on
@@ -235,9 +240,16 @@ def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
         return False
     elif is_packed_sequence:
         return True
+    # For mrope (multimodal RoPE), intermediate stages need dataset to get position_ids
+    needs_dataset_for_mrope = (
+        hasattr(args, 'position_embedding_type')
+        and args.position_embedding_type == 'mrope'
+        and not is_first_or_last_pipeline_stage(vp_stage)
+    )
     return (
         is_first_or_last_pipeline_stage(vp_stage)
         or mtp_on_this_rank(config, ignore_virtual=False, vp_stage=vp_stage)
+        or needs_dataset_for_mrope
     )
 
 
