@@ -112,19 +112,6 @@ class LanguageTransformerBlock(TransformerBlock):
                         else None
                     )
 
-                    # Update MoE layer_number for loop iterations
-                    if (
-                        self._loop_enabled
-                        and loop_iter > 0
-                        and getattr(layer, 'is_moe_layer', False)
-                    ):
-                        loop_span = (
-                            self.config.loop_end_layer - self.config.loop_start_layer
-                        )
-                        layer.mlp.set_layer_number(
-                            layer.layer_number + loop_span * loop_iter
-                        )
-
                     # Get appropriate inner quantization context
                     if use_inner_quantization_context:
                         if self.config.fp8:
@@ -153,14 +140,6 @@ class LanguageTransformerBlock(TransformerBlock):
                             packed_seq_params=packed_seq_params,
                             loop_residual_scale=loop_residual_scale,
                         )
-
-                    # Restore original MoE layer_number
-                    if (
-                        self._loop_enabled
-                        and loop_iter > 0
-                        and getattr(layer, 'is_moe_layer', False)
-                    ):
-                        layer.mlp.set_layer_number(layer.layer_number)
 
                 return hidden_states, context
 
@@ -398,26 +377,12 @@ class LanguageTransformerBlock(TransformerBlock):
                     layer = self.layers[local_idx]
 
                     # Determine loop residual scale for this execution step
+                    # Determine loop residual scale for this execution step
                     loop_residual_scale = (
                         self._loop_residual_scale
                         if self._loop_enabled and loop_iter >= 0
                         else None
                     )
-
-                    # Update MoE layer_number for different loop iterations so that
-                    # hash routing and load-balancing see distinct "logical" layers.
-                    if (
-                        self._loop_enabled
-                        and loop_iter > 0
-                        and getattr(layer, 'is_moe_layer', False)
-                    ):
-                        loop_span = (
-                            self.config.loop_end_layer - self.config.loop_start_layer
-                        )
-                        effective_layer_number = (
-                            layer.layer_number + loop_span * loop_iter
-                        )
-                        layer.mlp.set_layer_number(effective_layer_number)
 
                     # Get appropriate inner quantization context
                     if use_inner_quantization_context:
@@ -450,14 +415,6 @@ class LanguageTransformerBlock(TransformerBlock):
                             padding_mask=padding_mask,
                             loop_residual_scale=loop_residual_scale,
                         )
-
-                    # Restore original MoE layer_number after loop iteration
-                    if (
-                        self._loop_enabled
-                        and loop_iter > 0
-                        and getattr(layer, 'is_moe_layer', False)
-                    ):
-                        layer.mlp.set_layer_number(layer.layer_number)
 
                     # Deepstack visual embedding addition (only on first loop visit)
                     if visual_pos_masks is not None and deepstack_visual_embeds is not None:
