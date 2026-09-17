@@ -4,16 +4,8 @@ system:
   tensor_model_parallel_size: 2 # note: related-to num_query_groups and num_attention_heads
   # unset pp_size, recursive transformer do not support balanced pipeline stages
   pipeline_model_parallel_size: 1
-  # decoder_last_pipeline_num_layers: 14
   context_parallel_size: 1
-  # ### context parallel for long sequence training
-  # context_parallel_size: 2
-  # linear_cp_mode: headwise # cp mode for gdn
-  # fsa_cp_mode: headwise # cp mode for fsa
-  # # cp_comm_type # for flash-attn
-  # ### context parallel for long sequence training
   expert_model_parallel_size: 4
-  # expert_tensor_parallel_size: 1
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
   sequence_parallel: True
@@ -33,20 +25,22 @@ system:
     log_throughput: true
     log_params_norm: true
     log_num_zeros_in_grad: true
+    wandb_project: qwen36-35b-a3b-fsa-recursive
+    wandb_exp_name: 35b_a3b_recursive_smelt_exp2
+    wandb_mode: online
+    wandb_api_key: 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
   # memory:
   #   record_memory_history: True
   #   memory_snapshot_path: /share/project/lixianduo/memory_logs/memory_snapshot_16k_cold.pickle
   checkpoint:
-    save_interval: 1000
+    save_interval: 200
     ckpt_format: torch
     load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
-    # load: /share/project/lixianduo/models/MG-PP2-EP8-Qwen3.6-35B-A3B
-    # load: /share/project/lixianduo/models/MG-TP4-EP8-ETP1-PP1-Qwen3.6-35B-A3B
 
 model:
   finetune: true
   # attention_backend: flash
-  attention_backend: fsa # triton now
+  attention_backend: fsa
   # Qwen3.6-35B-A3B (MoE) architecture parameters
   kv_channels: 256
   qk_layernorm: True
@@ -93,16 +87,6 @@ model:
   # # mtp
   # mtp_num_layers: 1
 
-  # # Recompute - selective (with CP=2 to reduce per-rank activation memory)
-  # recompute:
-  #   recompute_granularity: 'selective'
-  #   recompute_modules:
-  #     - "core_attn"
-  #     - "layernorm"
-  #     - "moe_act"
-  #     - "shared_experts"
-  #     - "moe"
-
   recompute:
     recompute_granularity: 'full'
     recompute_method: 'uniform'
@@ -140,8 +124,7 @@ model:
 
   # training configs
   micro_batch_size: 1
-  global_batch_size: 32
-  # global_batch_size: 256
+  global_batch_size: 256
   eval_iters: 0
   eval_interval: 1000
   train_samples: 2097152
@@ -163,23 +146,11 @@ model:
   no_enable_vision: True  # generates --no-enable-vision; remove this line for multimodal training
   ###### vision related args ######
 
-  # # # # Profiler
-  # profile: True
-  # profile_ranks: [7]
-  # profile_step_start: 9
-  # profile_step_end: 10
-  # use_pytorch_profiler: False
-  # nvtx_ranges: true
-  # # # use_pytorch_profiler: True
-  # # # pytorch_profiler_collect_shapes: True
-  # # # pytorch_profiler_collect_callstack: True
-  # # # pytorch_profiler_collect_memory: True
 
   ## chunked cross-entropy ##
   chunked_cross_entropy: True
   # cross_entropy_chunk_size: 4096
   cross_entropy_chunk_size: 1024  # optional, default to 4096
-  # cross_entropy_chunk_size: 512
   ## chunked cross-entropy ##
 
 
