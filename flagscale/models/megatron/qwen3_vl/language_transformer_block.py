@@ -94,11 +94,36 @@ class LanguageTransformerBlock(TransformerBlock):
         """Forward method with activation checkpointing."""
 
         def custom(start: int, end: int):
+            """Create a custom forward function for execution plan steps [start, end).
+
+            When loop is enabled, start/end refer to indices in self._execution_plan.
+            Each step maps to (local_layer_idx, loop_iteration).
+            """
             def custom_forward(
                 hidden_states, attention_mask, context, context_mask, rotary_pos_emb
             ):
-                for index in range(start, end):
-                    layer = self._get_layer(index)
+                for exec_idx in range(start, end):
+                    local_idx, loop_iter = self._execution_plan[exec_idx]
+                    layer = self._get_layer(local_idx)
+
+                    loop_residual_scale = (
+                        self._loop_residual_scale
+                        if self._loop_enabled and loop_iter >= 0
+                        else None
+                    )
+
+                    # Update MoE layer_number for loop iterations
+                    if (
+                        self._loop_enabled
+                        and loop_iter > 0
+                        and getattr(layer, 'is_moe_layer', False)
+                    ):
+                        loop_span = (
+                            self.config.loop_end_layer - self.config.loop_start_layer
+                        )
+                        layer.mlp.set_layer_number(
+                            layer.layer_number + loop_span * loop_iter
+                        )
 
                     # Get appropriate inner quantization context
                     if use_inner_quantization_context:
@@ -126,7 +151,17 @@ class LanguageTransformerBlock(TransformerBlock):
                             attention_bias=attention_bias,
                             inference_context=None,
                             packed_seq_params=packed_seq_params,
+                            loop_residual_scale=loop_residual_scale,
                         )
+
+                    # Restore original MoE layer_number
+                    if (
+                        self._loop_enabled
+                        and loop_iter > 0
+                        and getattr(layer, 'is_moe_layer', False)
+                    ):
+                        layer.mlp.set_layer_number(layer.layer_number)
+
                 return hidden_states, context
 
             return custom_forward
@@ -157,49 +192,54 @@ class LanguageTransformerBlock(TransformerBlock):
                     rotary_pos_emb,
                 )
 
+        num_exec_steps = len(self._execution_plan)
+
         if self.config.recompute_method == 'uniform':
-            # Uniformly divide the total number of Transformer layers and checkpoint
+            # Uniformly divide the total number of execution steps and checkpoint
             # the input activation of each divided chunk.
-            # A method to further reduce memory usage reducing checkpoints.
-            layer_idx = 0
-            while layer_idx < self.num_layers_per_pipeline_rank:
-                hidden_states, context = checkpoint_handler(
-                    custom(layer_idx, layer_idx + self.config.recompute_num_layers)
+            exec_idx = 0
+            while exec_idx < num_exec_steps:
+                chunk_end = min(
+                    exec_idx + self.config.recompute_num_layers, num_exec_steps
                 )
-                # layer_idx += self.config.recompute_num_layers
+                hidden_states, context = checkpoint_handler(
+                    custom(exec_idx, chunk_end)
+                )
 
-                # NOTE: Assume that this is first pipeline stage that has at least three layers.
-                    #       The other stages will just pass None for visual_pos_masks and deepstack_visual_embeds.
+                # Deepstack visual embedding injection (only on first loop visit)
                 if visual_pos_masks is not None and deepstack_visual_embeds is not None:
-                    assert len(self.layers) >= len(deepstack_visual_embeds), f"First pipeline stage should have at least {len(self.layers)} layers for deepstack."
-                    if layer_idx < len(deepstack_visual_embeds):
-                        hidden_states = self._deepstack_process(
-                            hidden_states,
-                            visual_pos_masks,
-                            deepstack_visual_embeds[layer_idx],
-                        )
+                    assert len(self.layers) >= len(deepstack_visual_embeds), (
+                        f"First pipeline stage should have at least "
+                        f"{len(self.layers)} layers for deepstack."
+                    )
+                    for idx in range(exec_idx, chunk_end):
+                        local_idx, loop_iter = self._execution_plan[idx]
+                        if loop_iter == 0 and local_idx < len(deepstack_visual_embeds):
+                            if idx == chunk_end - 1:
+                                hidden_states = self._deepstack_process(
+                                    hidden_states,
+                                    visual_pos_masks,
+                                    deepstack_visual_embeds[local_idx],
+                                )
 
-                layer_idx += self.config.recompute_num_layers
+                exec_idx += self.config.recompute_num_layers
 
         elif self.config.recompute_method == 'block':
             # Checkpoint the input activation of only a set number of individual
-            # Transformer layers and skip the rest.
-            # A method fully use the device memory removing redundant re-computation.
+            # execution steps and skip the rest.
             recompute_skip_num_layers = 0
-            for layer_idx in range(self.num_layers_per_pipeline_rank):
+            for exec_idx in range(num_exec_steps):
                 # Skip recomputation when input grad computation is not needed.
-                # Need to have at least one input tensor with gradient computation
-                # for re-enterant autograd engine.
                 # TODO: check if fp4 is supported in this case
                 if (self.config.fp8 or self.config.fp4) and not hidden_states.requires_grad:
                     recompute_skip_num_layers += 1
                 if (
-                    layer_idx >= recompute_skip_num_layers
-                    and layer_idx < self.config.recompute_num_layers + recompute_skip_num_layers
+                    exec_idx >= recompute_skip_num_layers
+                    and exec_idx < self.config.recompute_num_layers + recompute_skip_num_layers
                 ):
-                    hidden_states, context = checkpoint_handler(custom(layer_idx, layer_idx + 1))
+                    hidden_states, context = checkpoint_handler(custom(exec_idx, exec_idx + 1))
                 else:
-                    hidden_states, context = custom(layer_idx, layer_idx + 1)(
+                    hidden_states, context = custom(exec_idx, exec_idx + 1)(
                         hidden_states, attention_mask, context, context_mask, rotary_pos_emb
                     )
         else:
@@ -315,6 +355,15 @@ class LanguageTransformerBlock(TransformerBlock):
         with rng_context, outer_quantization_context:
             # Forward pass.
             if self.config.recompute_granularity == "full" and self.training:
+                if self._loop_enabled:
+                    print(
+                        f"[Loop] loop execution (checkpointed), "
+                        f"exec_steps={len(self._execution_plan)}, "
+                        f"scale={self._loop_residual_scale}",
+                        flush=True,
+                    )
+                else:
+                    print("[Loop] without loop execution (checkpointed)", flush=True)
                 if visual_pos_masks is not None or deepstack_visual_embeds is not None:
                     assert (
                         self.config.recompute_method == "uniform"
@@ -332,11 +381,44 @@ class LanguageTransformerBlock(TransformerBlock):
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
                     use_inner_quantization_context=use_inner_quantization_context,
-                    visual_pos_masks = visual_pos_masks,
-                    deepstack_visual_embeds = deepstack_visual_embeds,
+                    visual_pos_masks=visual_pos_masks,
+                    deepstack_visual_embeds=deepstack_visual_embeds,
                 )
             else:
-                for l_no, layer in enumerate(self.layers):
+                if self._loop_enabled:
+                    print(
+                        f"[Loop] loop execution (non-checkpointed), "
+                        f"exec_steps={len(self._execution_plan)}, "
+                        f"scale={self._loop_residual_scale}",
+                        flush=True,
+                    )
+                else:
+                    print("[Loop] without loop execution (non-checkpointed)", flush=True)
+                for exec_step, (local_idx, loop_iter) in enumerate(self._execution_plan):
+                    layer = self.layers[local_idx]
+
+                    # Determine loop residual scale for this execution step
+                    loop_residual_scale = (
+                        self._loop_residual_scale
+                        if self._loop_enabled and loop_iter >= 0
+                        else None
+                    )
+
+                    # Update MoE layer_number for different loop iterations so that
+                    # hash routing and load-balancing see distinct "logical" layers.
+                    if (
+                        self._loop_enabled
+                        and loop_iter > 0
+                        and getattr(layer, 'is_moe_layer', False)
+                    ):
+                        loop_span = (
+                            self.config.loop_end_layer - self.config.loop_start_layer
+                        )
+                        effective_layer_number = (
+                            layer.layer_number + loop_span * loop_iter
+                        )
+                        layer.mlp.set_layer_number(effective_layer_number)
+
                     # Get appropriate inner quantization context
                     if use_inner_quantization_context:
                         if self.config.fp8:
@@ -366,18 +448,30 @@ class LanguageTransformerBlock(TransformerBlock):
                             packed_seq_params=packed_seq_params,
                             sequence_len_offset=sequence_len_offset,
                             padding_mask=padding_mask,
+                            loop_residual_scale=loop_residual_scale,
                         )
-                    # Deepstack visual embedding addition
-                    # NOTE: Assume that this is first pipeline stage that has at least three layers.
-                    #       The other stages will just pass None for visual_pos_masks and deepstack_visual_embeds.
+
+                    # Restore original MoE layer_number after loop iteration
+                    if (
+                        self._loop_enabled
+                        and loop_iter > 0
+                        and getattr(layer, 'is_moe_layer', False)
+                    ):
+                        layer.mlp.set_layer_number(layer.layer_number)
+
+                    # Deepstack visual embedding addition (only on first loop visit)
                     if visual_pos_masks is not None and deepstack_visual_embeds is not None:
-                        assert len(self.layers) >= len(deepstack_visual_embeds), f"First pipeline stage should have at least {len(self.layers)} layers for deepstack."
-                        if l_no < len(deepstack_visual_embeds):
+                        assert len(self.layers) >= len(deepstack_visual_embeds), (
+                            f"First pipeline stage should have at least "
+                            f"{len(self.layers)} layers for deepstack."
+                        )
+                        if loop_iter == 0 and local_idx < len(deepstack_visual_embeds):
                             hidden_states = self._deepstack_process(
                                 hidden_states,
                                 visual_pos_masks,
-                                deepstack_visual_embeds[l_no],
+                                deepstack_visual_embeds[local_idx],
                             )
+
                     if (
                         torch.is_grad_enabled()
                         and self.config.cpu_offloading
