@@ -1,7 +1,8 @@
 system:
   num_workers: 1
   calculate_per_token_loss: true
-  tensor_model_parallel_size: 4 # note: related-to num_query_groups and num_attention_heads
+  tensor_model_parallel_size: 2 # note: related-to num_query_groups and num_attention_heads
+  # unset pp_size, recursive transformer do not support balanced pipeline stages
   pipeline_model_parallel_size: 1
   # decoder_last_pipeline_num_layers: 14
   context_parallel_size: 1
@@ -11,8 +12,8 @@ system:
   # fsa_cp_mode: headwise # cp mode for fsa
   # # cp_comm_type # for flash-attn
   # ### context parallel for long sequence training
-  expert_model_parallel_size: 8
-  expert_tensor_parallel_size: 1
+  expert_model_parallel_size: 4
+  # expert_tensor_parallel_size: 1
   # use_flash_attn: True # deprecated, use ```attention_backend: flash```
   use_distributed_optimizer: True
   sequence_parallel: True
@@ -38,9 +39,9 @@ system:
   checkpoint:
     save_interval: 1000
     ckpt_format: torch
-    # load: /share/project/lixianduo/models/MG-TP4-EP2-Qwen3.6-35B-A3B
+    load: /share/project/lixianduo/models/MG-TP2-EP4-Qwen3.6-35B-A3B
     # load: /share/project/lixianduo/models/MG-PP2-EP8-Qwen3.6-35B-A3B
-    load: /share/project/lixianduo/models/MG-TP4-EP8-ETP1-PP1-Qwen3.6-35B-A3B
+    # load: /share/project/lixianduo/models/MG-TP4-EP8-ETP1-PP1-Qwen3.6-35B-A3B
 
 model:
   finetune: true
@@ -139,8 +140,8 @@ model:
 
   # training configs
   micro_batch_size: 1
-  # global_batch_size: 64
-  global_batch_size: 256
+  global_batch_size: 32
+  # global_batch_size: 256
   eval_iters: 0
   eval_interval: 1000
   train_samples: 2097152
@@ -197,8 +198,15 @@ model:
 
   # 4. fsa cuda kernels
   fsa_use_cuda: True
-
   ## performance optimizations ##
+
+  
+  ## Loop Transformer (SMELT recipe): loop middle 50% layers twice, scale 1/r
+  loop_start_layer: 10       # 0-based global index, inclusive
+  loop_end_layer: 30         # 0-based global index, exclusive; span = layer 10..29
+  num_loop_iterations: 2     # loop twice → effective depth = 10 + 20*2 + 10 = 60
+  loop_residual_scale: 0.5   # 1/r = 1/2, applied to all sublayer residuals in loop span
+  ## Loop Transformer
 
 
 # for text only qwen36 llm backbone

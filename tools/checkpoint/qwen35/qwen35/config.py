@@ -49,6 +49,8 @@ class Config:
         self.tp = cfg.get("tensor_model_parallel_size", 1)
         self.pp = cfg.get("pipeline_model_parallel_size", 1)
         self.ep = cfg.get("expert_model_parallel_size", 1)
+        # Expert TP: defaults to same as model TP if not specified
+        self.expert_tp = cfg.get("expert_tensor_parallel_size", self.tp)
 
         # Uneven PP: optional per-stage layer counts
         self.decoder_first_pipeline_num_layers = cfg.get("decoder_first_pipeline_num_layers", None)
