@@ -183,6 +183,12 @@ def main():
     if model_type == "moe" and cfg.expert_tp != cfg.tp:
         print(f"Expert-TP={cfg.expert_tp} (different from model TP)")
     print(f"Layers={cfg.num_layers}, hidden={cfg.hidden_size}")
+    if cfg.is_loop:
+        print(
+            f"Loop Transformer: layers [{cfg.loop_start_layer}, {cfg.loop_end_layer}) "
+            f"x {cfg.num_loop_iterations}, scale={cfg.loop_residual_scale}, "
+            f"HF layers={cfg.hf_num_layers}"
+        )
     print(f"LN adjustment: {LN_ADJUSTMENT}")
     print(f"Ref skip value: {args.ref_skip_value}")
 

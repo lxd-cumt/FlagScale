@@ -105,12 +105,65 @@ class Config:
             self.temporal_patch_size = 0
             self.use_linear_proj = False
 
+        # Loop Transformer params: optional
+        # When set, meg2hf expands the loop region into separate HF layers
+        # and absorbs loop_residual_scale into output projection weights.
+        self.loop_start_layer = cfg.get("loop_start_layer", None)
+        self.loop_end_layer = cfg.get("loop_end_layer", None)
+        self.num_loop_iterations = cfg.get("num_loop_iterations", 2)
+        self.loop_residual_scale = cfg.get("loop_residual_scale", None)
+        self._validate_loop_config()
+
         # MTP params: optional
         self.mtp_num_layers = cfg.get("mtp_num_layers", 0) or 0
 
     @property
     def is_moe(self):
         return self.num_experts is not None and self.num_experts > 0
+
+    @property
+    def is_loop(self):
+        """Whether Loop Transformer expansion is enabled."""
+        return self.loop_start_layer is not None and self.loop_end_layer is not None
+
+    @property
+    def hf_num_layers(self):
+        """Number of layers in the expanded HF checkpoint.
+
+        For non-loop models this equals num_layers.  For loop models the loop
+        region is repeated ``num_loop_iterations`` times so the total is::
+
+            prelude + loop_span * num_loop_iterations + coda
+        """
+        if not self.is_loop:
+            return self.num_layers
+        loop_span = self.loop_end_layer - self.loop_start_layer
+        return self.num_layers + loop_span * (self.num_loop_iterations - 1)
+
+    def _validate_loop_config(self):
+        """Sanity-check loop parameters when present."""
+        if (self.loop_start_layer is None) != (self.loop_end_layer is None):
+            raise ValueError(
+                "loop_start_layer and loop_end_layer must both be None or both be set. "
+                f"Got loop_start_layer={self.loop_start_layer}, "
+                f"loop_end_layer={self.loop_end_layer}."
+            )
+        if not self.is_loop:
+            return
+        if not (0 <= self.loop_start_layer < self.loop_end_layer <= self.num_layers):
+            raise ValueError(
+                f"Loop range must satisfy 0 <= loop_start_layer < loop_end_layer <= num_layers. "
+                f"Got loop_start_layer={self.loop_start_layer}, "
+                f"loop_end_layer={self.loop_end_layer}, num_layers={self.num_layers}."
+            )
+        if self.num_loop_iterations < 2:
+            raise ValueError(
+                f"num_loop_iterations must be >= 2, got {self.num_loop_iterations}."
+            )
+        if self.loop_residual_scale is not None and self.loop_residual_scale <= 0:
+            raise ValueError(
+                f"loop_residual_scale must be positive, got {self.loop_residual_scale}."
+            )
 
     @property
     def pp_layer_counts(self):

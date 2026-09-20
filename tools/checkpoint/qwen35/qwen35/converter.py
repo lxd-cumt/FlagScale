@@ -65,6 +65,32 @@ def _restore_ln(weight):
 
 
 # -----------------------------------------------------------------------------
+# Shared-storage dedup (needed after loop expansion)
+# -----------------------------------------------------------------------------
+def _dedup_shared_tensors(hf_sd):
+    """Clone tensors that share underlying storage.
+
+    After loop expansion, multiple HF layer keys may reference the same
+    physical tensor.  ``safetensors`` refuses to serialise shared-storage
+    tensors, so the second (and subsequent) occurrence is cloned in-place.
+    """
+    seen = set()
+    cloned = 0
+    for key in list(hf_sd.keys()):
+        t = hf_sd[key]
+        if not isinstance(t, torch.Tensor):
+            continue
+        ptr = t.untyped_storage().data_ptr()
+        if ptr in seen:
+            hf_sd[key] = t.clone()
+            cloned += 1
+        else:
+            seen.add(ptr)
+    if cloned:
+        print(f"Cloned {cloned} tensors to eliminate shared storage")
+
+
+# -----------------------------------------------------------------------------
 # Base converter
 # -----------------------------------------------------------------------------
 class BaseConverter:
@@ -177,6 +203,81 @@ class BaseConverter:
         return meg_sd
 
     # -------------------------------------------------------------------------
+    # Loop Transformer helpers
+    # -------------------------------------------------------------------------
+    def _build_loop_execution_plan(self):
+        """Build execution plan mapping HF layer indices to physical layers.
+
+        Returns a list of ``(hf_layer_idx, physical_layer_idx, in_loop)``
+        tuples.  For non-loop models this is never called.
+        """
+        cfg = self.cfg
+        plan = []
+        hf_idx = 0
+        # Prelude: physical layers [0, loop_start)
+        for phys in range(cfg.loop_start_layer):
+            plan.append((hf_idx, phys, False, -1))
+            hf_idx += 1
+        # Loop region repeated num_loop_iterations times
+        for iteration in range(cfg.num_loop_iterations):
+            for phys in range(cfg.loop_start_layer, cfg.loop_end_layer):
+                plan.append((hf_idx, phys, True, iteration))
+                hf_idx += 1
+        # Coda: physical layers [loop_end, num_layers)
+        for phys in range(cfg.loop_end_layer, cfg.num_layers):
+            plan.append((hf_idx, phys, False, -1))
+            hf_idx += 1
+        assert hf_idx == cfg.hf_num_layers, (
+            f"Execution plan length {hf_idx} != expected {cfg.hf_num_layers}"
+        )
+        return plan
+
+    def _absorb_loop_scale(self, hf_sd, hf_pfx, phys_idx):
+        """Multiply ``loop_residual_scale`` into output-projection weights.
+
+        Scale is absorbed into the last linear projection of both the
+        attention block (GDN ``out_proj`` or SDPA ``o_proj``) and the MLP
+        block (dense ``down_proj`` or every MoE expert ``down_proj`` plus
+        the shared-expert ``down_proj``).
+
+        Because ``scale * (W @ x) == (scale * W) @ x``, the scaled model
+        produces identical outputs without any runtime modification.
+        """
+        cfg = self.cfg
+        scale = cfg.loop_residual_scale
+        if scale is None or scale == 1.0:
+            return
+        freq = cfg.linear_attention_freq
+
+        # --- Attention output projection ---
+        if is_gdn_layer(phys_idx, freq):
+            attn_key = f"{hf_pfx}.linear_attn.out_proj.weight"
+        else:
+            attn_key = f"{hf_pfx}.self_attn.o_proj.weight"
+        if attn_key in hf_sd:
+            hf_sd[attn_key] = hf_sd[attn_key] * scale
+
+        # --- MLP output projection(s) ---
+        if cfg.is_moe:
+            # Stacked experts: shape [num_experts, hidden, moe_ffn]
+            key = f"{hf_pfx}.mlp.experts.down_proj"
+            if key in hf_sd:
+                hf_sd[key] = hf_sd[key] * scale
+            # Per-expert (non-stacked format)
+            for e in range(cfg.num_experts):
+                key = f"{hf_pfx}.mlp.experts.{e}.down_proj.weight"
+                if key in hf_sd:
+                    hf_sd[key] = hf_sd[key] * scale
+            # Shared expert
+            key = f"{hf_pfx}.mlp.shared_expert.down_proj.weight"
+            if key in hf_sd:
+                hf_sd[key] = hf_sd[key] * scale
+        else:
+            key = f"{hf_pfx}.mlp.down_proj.weight"
+            if key in hf_sd:
+                hf_sd[key] = hf_sd[key] * scale
+
+    # -------------------------------------------------------------------------
     # Megatron -> HF naming conversion
     # -------------------------------------------------------------------------
     def _convert_llm_meg2hf(self, full_sd, hf_sd):
@@ -186,11 +287,44 @@ class BaseConverter:
         if emb_key in full_sd:
             hf_sd["model.language_model.embed_tokens.weight"] = full_sd[emb_key]
 
-        for layer_idx in range(cfg.num_layers):
-            mg_pfx = f"language_model.decoder.layers.{layer_idx}"
-            hf_pfx = f"model.language_model.layers.{layer_idx}"
+        # Build layer mapping.  For loop models the loop region is expanded;
+        # for non-loop models this is a plain 1:1 identity mapping.
+        if cfg.is_loop:
+            layer_plan = self._build_loop_execution_plan()
+            print(
+                f"Loop expansion: {cfg.num_layers} physical layers -> "
+                f"{cfg.hf_num_layers} HF layers "
+                f"(loop [{cfg.loop_start_layer}, {cfg.loop_end_layer}) "
+                f"x {cfg.num_loop_iterations}, "
+                f"scale={cfg.loop_residual_scale})"
+            )
+        else:
+            layer_plan = [(i, i, False, -1) for i in range(cfg.num_layers)]
 
-            if is_gdn_layer(layer_idx, freq):
+        for hf_idx, phys_idx, in_loop, iteration in layer_plan:
+            mg_pfx = f"language_model.decoder.layers.{phys_idx}"
+            hf_pfx = f"model.language_model.layers.{hf_idx}"
+            layer_type = "GDN" if is_gdn_layer(phys_idx, freq) else "SDPA"
+
+            if in_loop:
+                scale = cfg.loop_residual_scale
+                print(
+                    f"  HF layer {hf_idx:>3d} <- physical {phys_idx:>3d} "
+                    f"[{layer_type}] loop iter={iteration}, scale={scale}"
+                )
+            elif cfg.is_loop:
+                region = "prelude" if phys_idx < cfg.loop_start_layer else "coda"
+                print(
+                    f"  HF layer {hf_idx:>3d} <- physical {phys_idx:>3d} "
+                    f"[{layer_type}] ({region})"
+                )
+            else:
+                print(
+                    f"  HF layer {hf_idx:>3d} <- physical {phys_idx:>3d} "
+                    f"[{layer_type}]"
+                )
+
+            if is_gdn_layer(phys_idx, freq):
                 mk = f"{mg_pfx}.self_attention.in_proj.layer_norm_weight"
                 if mk in full_sd:
                     hf_sd[f"{hf_pfx}.input_layernorm.weight"] = _restore_ln(full_sd[mk])
@@ -242,7 +376,11 @@ class BaseConverter:
                 if mk in full_sd:
                     hf_sd[f"{hf_pfx}.self_attn.k_norm.weight"] = _restore_ln(full_sd[mk])
 
-            convert_layer_mlp_meg2hf(full_sd, hf_sd, layer_idx, hf_pfx, mg_pfx, cfg)
+            convert_layer_mlp_meg2hf(full_sd, hf_sd, phys_idx, hf_pfx, mg_pfx, cfg)
+
+            # Absorb loop_residual_scale into output projection weights
+            if in_loop:
+                self._absorb_loop_scale(hf_sd, hf_pfx, phys_idx)
 
         mk = "language_model.decoder.final_layernorm.weight"
         if mk in full_sd:
@@ -261,6 +399,13 @@ class BaseConverter:
             convert_vision_meg2hf(full_sd, hf_sd, self.cfg)
         if self.cfg.mtp_num_layers > 0:
             convert_mtp_meg2hf(full_sd, hf_sd, self.cfg)
+
+        # Loop expansion causes multiple HF layers to reference the same
+        # physical tensor (shared storage).  safetensors refuses to save
+        # tensors that share memory, so we need to clone any duplicates.
+        if self.cfg.is_loop:
+            _dedup_shared_tensors(hf_sd)
+
         return hf_sd
 
     # -------------------------------------------------------------------------

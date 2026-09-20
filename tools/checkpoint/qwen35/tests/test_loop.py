@@ -1,0 +1,429 @@
+"""Tests for Loop Transformer checkpoint conversion logic."""
+
+import copy
+import os
+import sys
+import tempfile
+
+import pytest
+import torch
+import yaml
+
+# Ensure the package is importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from qwen35.config import Config
+from qwen35.converter import MoEConverter
+from qwen35.gdn import is_gdn_layer
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+_BASE_CFG = {
+    "num_layers": 40,
+    "hidden_size": 2560,
+    "ffn_hidden_size": 1024,
+    "num_attention_heads": 20,
+    "num_query_groups": 4,
+    "group_query_attention": True,
+    "kv_channels": 256,
+    "attention_output_gate": True,
+    "untie_embeddings_and_output_weights": True,
+    "tensor_model_parallel_size": 1,
+    "pipeline_model_parallel_size": 1,
+    "expert_model_parallel_size": 1,
+    "num_experts": 8,
+    "moe_router_topk": 2,
+    "moe_ffn_hidden_size": 1024,
+    "moe_shared_expert_intermediate_size": 2560,
+    "moe_grouped_gemm": True,
+    "moe_use_shared_expert_gate": True,
+    "expert_tensor_parallel_size": 1,
+    "linear_attention_freq": 4,
+    "linear_key_head_dim": 128,
+    "linear_value_head_dim": 128,
+    "linear_num_key_heads": 16,
+    "linear_num_value_heads": 32,
+    "no_enable_vision": True,
+    "mtp_num_layers": 0,
+}
+
+_LOOP_FIELDS = {
+    "loop_start_layer": 10,
+    "loop_end_layer": 30,
+    "num_loop_iterations": 2,
+    "loop_residual_scale": 0.5,
+}
+
+
+def _make_cfg(extra=None):
+    """Write a temp YAML and return a Config."""
+    d = {**_BASE_CFG}
+    if extra:
+        d.update(extra)
+    fd, path = tempfile.mkstemp(suffix=".yaml")
+    try:
+        with os.fdopen(fd, "w") as f:
+            yaml.dump(d, f)
+        return Config(path)
+    finally:
+        os.unlink(path)
+
+
+def _make_cfg_expect_error(extra=None):
+    """Write a temp YAML and return path (caller handles error)."""
+    d = {**_BASE_CFG}
+    if extra:
+        d.update(extra)
+    fd, path = tempfile.mkstemp(suffix=".yaml")
+    with os.fdopen(fd, "w") as f:
+        yaml.dump(d, f)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Config tests
+# ---------------------------------------------------------------------------
+class TestLoopConfig:
+    def test_is_loop_true(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        assert cfg.is_loop is True
+
+    def test_is_loop_false(self):
+        cfg = _make_cfg()
+        assert cfg.is_loop is False
+
+    def test_hf_num_layers_loop(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        # 10 prelude + 20*2 loop + 10 coda = 60
+        assert cfg.hf_num_layers == 60
+
+    def test_hf_num_layers_nonloop(self):
+        cfg = _make_cfg()
+        assert cfg.hf_num_layers == 40
+
+    def test_validation_mismatched_start_end(self):
+        path = _make_cfg_expect_error({"loop_start_layer": 10})
+        try:
+            with pytest.raises(ValueError, match="both be None or both be set"):
+                Config(path)
+        finally:
+            os.unlink(path)
+
+    def test_validation_bad_range(self):
+        path = _make_cfg_expect_error({
+            "loop_start_layer": 30,
+            "loop_end_layer": 10,
+            "num_loop_iterations": 2,
+        })
+        try:
+            with pytest.raises(ValueError, match="loop_start_layer < loop_end_layer"):
+                Config(path)
+        finally:
+            os.unlink(path)
+
+    def test_validation_iterations_too_small(self):
+        path = _make_cfg_expect_error({
+            "loop_start_layer": 10,
+            "loop_end_layer": 30,
+            "num_loop_iterations": 1,
+        })
+        try:
+            with pytest.raises(ValueError, match="num_loop_iterations must be >= 2"):
+                Config(path)
+        finally:
+            os.unlink(path)
+
+    def test_validation_negative_scale(self):
+        path = _make_cfg_expect_error({
+            "loop_start_layer": 10,
+            "loop_end_layer": 30,
+            "num_loop_iterations": 2,
+            "loop_residual_scale": -0.5,
+        })
+        try:
+            with pytest.raises(ValueError, match="loop_residual_scale must be positive"):
+                Config(path)
+        finally:
+            os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Execution plan tests
+# ---------------------------------------------------------------------------
+class TestExecutionPlan:
+    def test_plan_length(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        plan = conv._build_loop_execution_plan()
+        assert len(plan) == 60
+
+    def test_prelude_layers(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        plan = conv._build_loop_execution_plan()
+        for hf, phys, in_loop, iteration in plan[:10]:
+            assert hf == phys
+            assert in_loop is False
+            assert iteration == -1
+
+    def test_loop_layers(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        plan = conv._build_loop_execution_plan()
+        loop_entries = plan[10:50]
+        assert len(loop_entries) == 40
+        # First iteration: phys 10-29
+        for i, (hf, phys, in_loop, iteration) in enumerate(loop_entries[:20]):
+            assert hf == 10 + i
+            assert phys == 10 + i
+            assert in_loop is True
+            assert iteration == 0
+        # Second iteration: phys 10-29 again
+        for i, (hf, phys, in_loop, iteration) in enumerate(loop_entries[20:]):
+            assert hf == 30 + i
+            assert phys == 10 + i
+            assert in_loop is True
+            assert iteration == 1
+
+    def test_coda_layers(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        plan = conv._build_loop_execution_plan()
+        coda = plan[50:]
+        assert len(coda) == 10
+        for i, (hf, phys, in_loop, iteration) in enumerate(coda):
+            assert hf == 50 + i
+            assert phys == 30 + i
+            assert in_loop is False
+
+
+# ---------------------------------------------------------------------------
+# Scale absorption tests
+# ---------------------------------------------------------------------------
+def _build_fake_meg_sd(cfg):
+    """Build a minimal Megatron-like state dict for conversion testing."""
+    sd = {}
+    freq = cfg.linear_attention_freq
+    h = cfg.hidden_size
+    sd["language_model.embedding.word_embeddings.weight"] = torch.randn(1000, h)
+
+    for layer_idx in range(cfg.num_layers):
+        pfx = f"language_model.decoder.layers.{layer_idx}"
+
+        if is_gdn_layer(layer_idx, freq):
+            # GDN layer: in_proj uses linear attention dims
+            num_qk_heads = cfg.linear_num_key_heads
+            num_v_heads = cfg.linear_num_value_heads
+            qk_head_dim = cfg.linear_key_head_dim
+            v_head_dim = cfg.linear_value_head_dim
+            v_per_group = num_v_heads // num_qk_heads
+            q_size = num_qk_heads * qk_head_dim
+            k_size = num_qk_heads * qk_head_dim
+            v_size = num_qk_heads * v_per_group * v_head_dim
+            z_size = num_qk_heads * v_per_group * v_head_dim
+            b_size = num_qk_heads * v_per_group
+            a_size = num_qk_heads * v_per_group
+            in_proj_size = q_size + k_size + v_size + z_size + b_size + a_size
+            sd[f"{pfx}.self_attention.in_proj.layer_norm_weight"] = torch.randn(h)
+            sd[f"{pfx}.self_attention.in_proj.weight"] = torch.randn(in_proj_size, h)
+            sd[f"{pfx}.self_attention.conv1d.weight"] = torch.randn(h, 1, 4)
+            sd[f"{pfx}.self_attention.out_proj.weight"] = torch.randn(h, h)
+            sd[f"{pfx}.self_attention.out_norm.weight"] = torch.randn(h)
+            sd[f"{pfx}.self_attention.A_log"] = torch.randn(num_qk_heads)
+            sd[f"{pfx}.self_attention.dt_bias"] = torch.randn(num_qk_heads)
+        else:
+            # SDPA layer
+            n_heads = cfg.num_attention_heads
+            n_groups = cfg.num_query_groups
+            kv_channels = cfg.kv_channels
+            heads_per_group = n_heads // n_groups
+            if cfg.attention_output_gate:
+                total_hpg = 2 * heads_per_group + 2
+            else:
+                total_hpg = heads_per_group + 2
+            qkv_size = n_groups * total_hpg * kv_channels
+            sd[f"{pfx}.self_attention.linear_qkv.layer_norm_weight"] = torch.randn(h)
+            sd[f"{pfx}.self_attention.linear_qkv.weight"] = torch.randn(qkv_size, h)
+            sd[f"{pfx}.self_attention.linear_proj.weight"] = torch.randn(h, h)
+            # q_norm: with output gate, q and z are both num_heads*kv_channels
+            if cfg.attention_output_gate:
+                q_norm_size = 2 * n_heads * kv_channels
+            else:
+                q_norm_size = n_heads * kv_channels
+            sd[f"{pfx}.self_attention.q_layernorm.weight"] = torch.randn(q_norm_size)
+            sd[f"{pfx}.self_attention.k_layernorm.weight"] = torch.randn(
+                n_groups * kv_channels
+            )
+
+        # MLP: MoE with stacked experts
+        sd[f"{pfx}.pre_mlp_layernorm.weight"] = torch.randn(h)
+        sd[f"{pfx}.mlp.router.weight"] = torch.randn(cfg.num_experts, h)
+        moe_ffn = cfg.moe_ffn_hidden_size
+        for e in range(cfg.num_experts):
+            sd[f"{pfx}.mlp.experts.linear_fc1.weight{e}"] = torch.randn(2 * moe_ffn, h)
+            sd[f"{pfx}.mlp.experts.linear_fc2.weight{e}"] = torch.randn(h, moe_ffn)
+        se_ffn = cfg.moe_shared_expert_intermediate_size
+        sd[f"{pfx}.mlp.shared_experts.linear_fc1.weight"] = torch.randn(2 * se_ffn, h)
+        sd[f"{pfx}.mlp.shared_experts.linear_fc2.weight"] = torch.randn(h, se_ffn)
+        sd[f"{pfx}.mlp.shared_experts.gate_weight"] = torch.randn(1, h)
+
+    sd["language_model.decoder.final_layernorm.weight"] = torch.randn(h)
+    sd["language_model.output_layer.weight"] = torch.randn(1000, h)
+    return sd
+
+
+class TestScaleAbsorption:
+    def test_loop_model_has_60_layers(self):
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+        hf_sd = conv.convert_to_hf(meg_sd)
+        # Should have keys for layers 0..59
+        layer_keys = [k for k in hf_sd if k.startswith("model.language_model.layers.")]
+        layer_indices = set()
+        for k in layer_keys:
+            idx = int(k.split(".")[3])
+            layer_indices.add(idx)
+        assert max(layer_indices) == 59
+        assert len(layer_indices) == 60
+
+    def test_nonloop_model_has_40_layers(self):
+        cfg = _make_cfg()
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+        hf_sd = conv.convert_to_hf(meg_sd)
+        layer_keys = [k for k in hf_sd if k.startswith("model.language_model.layers.")]
+        layer_indices = set()
+        for k in layer_keys:
+            idx = int(k.split(".")[3])
+            layer_indices.add(idx)
+        assert max(layer_indices) == 39
+        assert len(layer_indices) == 40
+
+    def test_scale_applied_to_loop_layers(self):
+        """GDN out_proj in loop region should be scaled by 0.5."""
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+
+        # Also create a scale=1.0 reference
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+
+        hf_scaled = conv.convert_to_hf(copy.deepcopy(meg_sd))
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # HF layer 10 is phys 10, in_loop=True.
+        # is_gdn_layer(10, 4) => 10%4=2, 2!=3 => True => GDN
+        hf_pfx = "model.language_model.layers.10"
+        attn_key = f"{hf_pfx}.linear_attn.out_proj.weight"
+        assert torch.allclose(hf_scaled[attn_key], hf_noscale[attn_key] * 0.5)
+
+        # Check shared expert down_proj also scaled
+        se_key = f"{hf_pfx}.mlp.shared_expert.down_proj.weight"
+        assert torch.allclose(hf_scaled[se_key], hf_noscale[se_key] * 0.5)
+
+    def test_scale_not_applied_to_prelude(self):
+        """Prelude layers should NOT be scaled."""
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+
+        hf_scaled = conv.convert_to_hf(copy.deepcopy(meg_sd))
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # HF layer 0 is prelude, not in loop
+        # is_gdn_layer(0, 4) => 0%4=0, 0!=3 => True => GDN
+        hf_pfx = "model.language_model.layers.0"
+        attn_key = f"{hf_pfx}.linear_attn.out_proj.weight"
+        assert torch.equal(hf_scaled[attn_key], hf_noscale[attn_key])
+
+    def test_scale_not_applied_to_coda(self):
+        """Coda layers should NOT be scaled."""
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+
+        hf_scaled = conv.convert_to_hf(copy.deepcopy(meg_sd))
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # HF layer 50 is coda (phys 30), not in loop
+        hf_pfx = "model.language_model.layers.50"
+        se_key = f"{hf_pfx}.mlp.shared_expert.down_proj.weight"
+        assert torch.equal(hf_scaled[se_key], hf_noscale[se_key])
+
+    def test_sdpa_layer_scale(self):
+        """SDPA layer o_proj in loop region should be scaled."""
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+
+        hf_scaled = conv.convert_to_hf(copy.deepcopy(meg_sd))
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # phys 11: is_gdn_layer(11, 4) => 11%4=3, 3!=3 => False => SDPA
+        # HF idx 11 maps to phys 11 (first iteration), in_loop=True
+        hf_pfx = "model.language_model.layers.11"
+        attn_key = f"{hf_pfx}.self_attn.o_proj.weight"
+        assert torch.allclose(hf_scaled[attn_key], hf_noscale[attn_key] * 0.5)
+
+    def test_loop_weight_sharing(self):
+        """Iteration 0 and iteration 1 of same physical layer share weights (before scale)."""
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+        meg_sd = _build_fake_meg_sd(cfg_noscale)
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # HF 10 = iter0 of phys 10, HF 30 = iter1 of phys 10
+        # Without scale they should be identical
+        pfx0 = "model.language_model.layers.10"
+        pfx1 = "model.language_model.layers.30"
+        key_suffix = ".linear_attn.in_proj_qkv.weight"
+        assert torch.equal(
+            hf_noscale[pfx0 + key_suffix],
+            hf_noscale[pfx1 + key_suffix],
+        )
+
+    def test_expert_down_proj_scaled(self):
+        """Stacked expert down_proj tensors in loop region should be scaled."""
+        cfg = _make_cfg(_LOOP_FIELDS)
+        conv = MoEConverter(cfg)
+        meg_sd = _build_fake_meg_sd(cfg)
+
+        cfg_noscale = _make_cfg({**_LOOP_FIELDS, "loop_residual_scale": 1.0})
+        conv_noscale = MoEConverter(cfg_noscale)
+
+        hf_scaled = conv.convert_to_hf(copy.deepcopy(meg_sd))
+        hf_noscale = conv_noscale.convert_to_hf(copy.deepcopy(meg_sd))
+
+        # HF layer 10 (in loop): check stacked experts.down_proj
+        hf_pfx = "model.language_model.layers.10"
+        # Converter produces stacked format when all experts present
+        stacked_key = f"{hf_pfx}.mlp.experts.down_proj"
+        if stacked_key in hf_scaled:
+            assert torch.allclose(hf_scaled[stacked_key], hf_noscale[stacked_key] * 0.5), (
+                "Stacked experts down_proj not scaled"
+            )
+        else:
+            # Per-expert format fallback
+            for e in range(cfg.num_experts):
+                key = f"{hf_pfx}.mlp.experts.{e}.down_proj.weight"
+                if key in hf_scaled:
+                    assert torch.allclose(hf_scaled[key], hf_noscale[key] * 0.5), (
+                        f"Expert {e} down_proj not scaled"
+                    )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
