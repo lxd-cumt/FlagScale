@@ -23,7 +23,7 @@ experiment:
   seed: 42
   save_steps: 10000
   load: null
-  exp_dir: xxx
+  exp_dir: /share/project/lixianduo/plugin/exps/${experiment.exp_name}
   ckpt_format: torch
   task:
     type: train
@@ -40,6 +40,7 @@ experiment:
     LOGLEVEL: "INFO"
     CUDA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
     CUDA_DEVICE_MAX_CONNECTIONS: 1
+    NVTE_PLUGIN: transformer_engine_plugin_fl
 
 action: run
 
