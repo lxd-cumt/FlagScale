@@ -31,6 +31,7 @@ from flagscale.runner.heartbeat.config import (
 )
 from flagscale.runner.runner_train import (
     _get_args_megatron,
+    _resolve_user_envs_train,
     _update_config_train,
 )
 from flagscale.runner.utils import get_pkg_dir, logger, parse_hostfile, resolve_path
@@ -83,7 +84,7 @@ class MegatronBackend(BackendBase):
             "run",
             "test",
         }
-        self.user_envs = self.config.experiment.get("envs", {})
+        self.user_envs = _resolve_user_envs_train(self.config)
         self.user_script = self.config.experiment.task.entrypoint
         self.resources = parse_hostfile(self.config.experiment.runner.get("hostfile", None))
         self.device_type_specific = self.config.get("device_type_specific", None)
