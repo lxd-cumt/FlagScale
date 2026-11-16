@@ -101,14 +101,14 @@ EOF
 }
 
 transformer_engine_ready() {
-    TORCH_DEVICE_BACKEND_AUTOLOAD=0 TE_FL_SKIP_CUDA=1 python -c '
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 NVTE_PLUGIN_SKIP_CUDA=1 python -c '
 from transformer_engine.pytorch import DotProductAttention, LayerNormLinear
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager, fp8_autocast
 ' &>/dev/null
 }
 
 megatron_lm_ready() {
-    TE_FL_SKIP_CUDA=1 python -c '
+    NVTE_PLUGIN_SKIP_CUDA=1 python -c '
 from megatron.core.extensions.transformer_engine import HAVE_TE
 from megatron.core.extensions.transformer_engine_spec_provider import TESpecProvider
 from megatron.core.models.gpt import GPTModel
@@ -139,15 +139,33 @@ install_transformer_engine() {
         "git -c http.version=HTTP/1.1 -C '$FLAGSCALE_DEPS/TransformerEngine-FL' \
         submodule update --init --recursive --depth 1 --recommend-shallow --jobs 1" || return 1
 
-    local npu_init="$FLAGSCALE_DEPS/TransformerEngine-FL/transformer_engine/plugin/core/backends/vendor/npu/__init__.py"
-    if [ "$DEBUG" != true ] && [ ! -f "$npu_init" ]; then
-        log_error "TransformerEngine-FL ref ${TE_REF:-default} is missing the NPU backend package"
-        return 1
+    # The NPU backend lives under a different path in each plugin layout: the
+    # standalone transformer_engine_plugin_fl package, or the older in-tree
+    # transformer_engine/plugin/core. FLAGSCALE_TE_REPO decides which one is
+    # checked out, so accept either.
+    local te_dir="$FLAGSCALE_DEPS/TransformerEngine-FL"
+    local npu_init_candidates=(
+        "$te_dir/transformer_engine_plugin_fl/backends/vendor/npu/__init__.py"
+        "$te_dir/transformer_engine/plugin/core/backends/vendor/npu/__init__.py"
+    )
+    if [ "$DEBUG" != true ]; then
+        local found=false
+        local candidate
+        for candidate in "${npu_init_candidates[@]}"; do
+            if [ -f "$candidate" ]; then
+                found=true
+                break
+            fi
+        done
+        if [ "$found" != true ]; then
+            log_error "TransformerEngine ref ${TE_REF:-default} is missing the NPU backend package"
+            return 1
+        fi
     fi
     local pip_cmd
     pip_cmd=$(get_pip_cmd)
     run_cmd -d "$DEBUG" bash -c "cd '$FLAGSCALE_DEPS/TransformerEngine-FL' && \
-        TORCH_DEVICE_BACKEND_AUTOLOAD=0 TE_FL_SKIP_CUDA=1 \
+        TORCH_DEVICE_BACKEND_AUTOLOAD=0 NVTE_PLUGIN_SKIP_CUDA=1 \
         $pip_cmd install --root-user-action=ignore \
         --no-build-isolation ." || return 1
     log_success "TransformerEngine-FL ready"
@@ -201,7 +219,7 @@ validate_training_stack() {
         return 0
     fi
 
-    TE_FL_SKIP_CUDA=1 python -c '
+    NVTE_PLUGIN_SKIP_CUDA=1 python -c '
 import transformer_engine
 from transformer_engine.pytorch import DotProductAttention, LayerNormLinear
 from megatron.core.extensions.transformer_engine import HAVE_TE

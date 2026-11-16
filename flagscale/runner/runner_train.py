@@ -50,6 +50,42 @@ from flagscale.runner.utils import (
 
 _MAX_CPU_COUNT = multiprocessing.cpu_count()
 
+_NVTE_PLUGIN_ENV = "NVTE_PLUGIN"
+
+
+def _resolve_user_envs_train(config: DictConfig):
+    """Build the training environment from `experiment.envs` plus `task.nvte_plugin`.
+
+    NVTE_PLUGIN has to be in the environment before the training process starts:
+    Transformer Engine calls load_framework_extension() while importing
+    transformer_engine.pytorch and caches the result, so a value applied later
+    -- from a command line argument, for instance -- never takes effect. That is
+    why this is a runner-side injection rather than a Megatron argument like
+    nvte_plugin_prefer.
+
+    Unset or "none" leaves the plugin disabled, which also makes every
+    NVTE_PLUGIN_* selection knob inert (see
+    flagscale/train/megatron/backend_config.py).
+    """
+    envs = dict(config.experiment.get("envs", {}) or {})
+
+    plugin = config.experiment.task.get("nvte_plugin", None)
+    plugin = str(plugin).strip() if plugin is not None else ""
+
+    if plugin and plugin.lower() != "none":
+        # An explicit experiment.envs entry wins, so a user can always override.
+        envs.setdefault(_NVTE_PLUGIN_ENV, plugin)
+        logger.info(f"TransformerEngine plugin enabled: {_NVTE_PLUGIN_ENV}={envs[_NVTE_PLUGIN_ENV]}")
+    else:
+        # Drop any inherited value so "none" reliably means "no plugin".
+        envs.pop(_NVTE_PLUGIN_ENV, None)
+        logger.info(
+            "TransformerEngine plugin disabled (experiment.task.nvte_plugin is unset or none);"
+            " NVTE_PLUGIN_* settings are ignored"
+        )
+
+    return envs
+
 
 def _get_args_megatron(config: DictConfig):
     assert config.experiment.task.backend == "megatron", (
@@ -426,7 +462,7 @@ class SSHTrainRunner(RunnerBase):
             raise ValueError(f"Unsupported backend: {self.config.experiment.task.backend}")
         self.rdzv_id = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
         self.heartbeat_config = prepare_heartbeat_launch_config(self.config, self.rdzv_id)
-        self.user_envs = self.config.experiment.get("envs", {})
+        self.user_envs = _resolve_user_envs_train(self.config)
         self.user_script = self.config.experiment.task.entrypoint
         self.resources = parse_hostfile(self.config.experiment.runner.get("hostfile", None))
         self.device_type_specific = self.config.get("device_type_specific", None)
@@ -884,7 +920,7 @@ class CloudTrainRunner(RunnerBase):
         self._prepare()
 
     def _prepare(self):
-        self.user_envs = self.config.experiment.get("envs", {})
+        self.user_envs = _resolve_user_envs_train(self.config)
         self.user_script = self.config.experiment.task.entrypoint
         _update_config_train(self.config)
         self.rdzv_id = datetime.now().strftime("%Y%m%d_%H%M%S.%f")

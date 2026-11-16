@@ -29,6 +29,9 @@ experiment:
     type: train
     backend: megatron
     entrypoint: flagscale/train/megatron/train_gpt.py
+    # Enables the TransformerEngine operator dispatch plugin. Unset or "none"
+    # runs stock TransformerEngine and makes every nvte_plugin_* setting inert.
+    nvte_plugin: transformer_engine_plugin_fl
   runner:
     per_node_task: false
     no_shared_fs: false
@@ -40,7 +43,6 @@ experiment:
     LOGLEVEL: "INFO"
     CUDA_VISIBLE_DEVICES: "0,1,2,3,4,5,6,7"
     CUDA_DEVICE_MAX_CONNECTIONS: 1
-    NVTE_PLUGIN: transformer_engine_plugin_fl
 
 action: run
 

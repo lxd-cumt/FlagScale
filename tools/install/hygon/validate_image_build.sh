@@ -35,9 +35,12 @@ runtime_options=(
     --ipc=host
     --volume /opt/hyhal:/opt/hyhal:ro
     --env HSA_FORCE_FINE_GRAIN_PCIE=1
-    # Select the FlagOS implementation so this contract verifies the backend
-    # expected by Hygon training rather than Transformer Engine's fallback.
-    --env TE_FL_PREFER=flagos
+    # Enable the operator dispatch plugin, then select the FlagOS implementation
+    # so this contract verifies the backend expected by Hygon training rather
+    # than Transformer Engine's fallback. NVTE_PLUGIN is the master switch and
+    # must be set before Transformer Engine is imported.
+    --env NVTE_PLUGIN=transformer_engine_plugin_fl
+    --env NVTE_PLUGIN_PREFER=flagos
     --cap-add SYS_PTRACE
     --security-opt seccomp=unconfined
 )
@@ -52,14 +55,14 @@ import flag_gems
 import megatron.core
 import transformer_engine
 from megatron.plugin.platform import get_platform
-from transformer_engine.plugin.core import get_manager
+from transformer_engine_plugin_fl import get_default_manager
 
 required = int(os.environ["EXPECTED_DEVICE_COUNT"])
 assert torch.cuda.is_available()
 assert torch.cuda.device_count() >= required
 assert flag_gems.vendor_name == "hygon"
 assert get_platform().device_name() == "cuda"
-assert get_manager().get_selected_impl_id("generic_gemm") == "default.flagos"
+assert get_default_manager().get_selected_impl_id("generic_gemm") == "default.flagos"
 value = torch.tensor(list(range(8)), dtype=torch.float32, device="cuda")
 assert (value * 2).cpu().tolist() == [0., 2., 4., 6., 8., 10., 12., 14.]
 '

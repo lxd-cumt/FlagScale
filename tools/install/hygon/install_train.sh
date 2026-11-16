@@ -84,7 +84,7 @@ main() {
         die "Hygon FlagGems installation failed"
     install_source TransformerEngine-FL "$TRANSFORMER_ENGINE_REF" \
         "$FLAGSCALE_DEPS/TransformerEngine-FL" \
-        /tmp/hygon-transformer-engine-fl.tar.gz "TE_FL_SKIP_CUDA=1" || \
+        /tmp/hygon-transformer-engine-fl.tar.gz "NVTE_PLUGIN_SKIP_CUDA=1" || \
         die "Hygon TransformerEngine-FL installation failed"
     validate_runtime || die "Hygon training runtime validation failed"
     log_success "Hygon training runtime ready"

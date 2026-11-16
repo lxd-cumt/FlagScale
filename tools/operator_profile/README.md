@@ -128,7 +128,7 @@ python3 \
 
 Use three runs with an otherwise identical workload:
 
-| Scenario | `te_fl_prefer` | `enable_flag_gems` | Purpose |
+| Scenario | `nvte_plugin_prefer` | `enable_flag_gems` | Purpose |
 |---|---|---:|---|
 | Vendor baseline | `vendor` | `false` | Coverage denominator |
 | FlagOS backend | `flagos` | `false` | FlagOS backend comparison |

@@ -42,7 +42,7 @@ system:
 
 model:
   # flagos
-  te_fl_prefer: flagos
+  nvte_plugin_prefer: flagos
   enable_flag_gems: True
   flag_gems_log_path: /nfs/lizhiyu/kt2/ds-fl/gems.log
   flag_gems_unused: ["baddbmm", "mm", "normal_", "sum_dim", "gather_backward", "index_add_", "slice_backward"]

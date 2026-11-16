@@ -1043,29 +1043,29 @@ def _add_flagos_args(parser):
         help='Backend selection for megatron fl.',
     )
     group.add_argument(
-        '--te-fl-prefer',
+        '--nvte-plugin-prefer',
         type=str,
         choices=['flagos', 'vendor', 'reference'],
         default='vendor',
-        help='Backend selection for transformer engine fl.',
+        help='Backend selection for the transformer engine plugin.',
     )
     group.add_argument(
-        '--te-fl-per-op',
+        '--nvte-plugin-per-op',
         type=str,
         default=None,
         help='Backend selection for custom ops.',
     )
     group.add_argument(
-        '--te-fl-allow-vendors',
+        '--nvte-plugin-allow-vendors',
         type=str,
         default=None,
-        help='Allow vendors for transformer engine fl.',
+        help='Allow vendors for the transformer engine plugin.',
     )
     group.add_argument(
-        '--te-fl-deny-vendors',
+        '--nvte-plugin-deny-vendors',
         type=str,
         default=None,
-        help='Deny vendors for transformer engine fl.',
+        help='Deny vendors for the transformer engine plugin.',
     )
     group.add_argument(
         '--enable-flag-gems',

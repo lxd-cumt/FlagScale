@@ -46,10 +46,16 @@ system:
 model:
   transformer_impl: transformer_engine
   #### FlagOS-Related Arguments for unified computation backend and communication backend
-  te_fl_prefer: flagos # enable flagos:triton in transformer engine fl
-  te_fl_per_op: "rmsnorm_fwd=vendor:acme|flagos;rope_fwd=flagos|reference" # enable custom ops selection for transformer engine fl
-  te_fl_allow_vendors: "vendor_a" # allow vendors for transformer engine fl
-  te_fl_deny_vendors: "vendor_b" # deny vendors for transformer engine fl
+  # Requires experiment.task.nvte_plugin to be set; without it these are ignored.
+  nvte_plugin_prefer: flagos # enable flagos:triton in transformer engine plugin
+  # Per-op override: "op=candidate|candidate;...". Op names must match the
+  # dispatch table (e.g. fused_rope_forward, not rope_fwd); candidates are
+  # flagos / vendor / reference, or vendor:NAME / impl:ID.
+  nvte_plugin_per_op: "rmsnorm_fwd=vendor:HYGON|flagos;fused_rope_forward=flagos|reference"
+  # Vendor names are matched case-sensitively, as registered: CUDA, BIREN,
+  # ENFLAME, HYGON, METAX, MUSA, NPU, KUNLUNXIN, Iluvatar.
+  nvte_plugin_allow_vendors: "HYGON" # vendor whitelist (comma-separated)
+  nvte_plugin_deny_vendors: "CUDA" # vendor blacklist (comma-separated)
   enable_flag_gems: True # enable flag gems to replace torch ops for distributed training
   flag_gems_log_path: xxx # path of flag gems logging
   flag_gems_unused: [xxx] # flag gems unused ops list

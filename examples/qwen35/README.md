@@ -18,7 +18,7 @@ python -m pip install \
   'megatron-energon==6.0.1' 'webdataset==1.0.2' \
   hydra-core pillow pyyaml tqdm
 export PYTHONPATH="$PWD:$PWD/flagscale/train:${PYTHONPATH:-}"
-export TE_FL_PREFER=vendor
+export NVTE_PLUGIN_PREFER=vendor
 export OMP_NUM_THREADS=4
 ```
 

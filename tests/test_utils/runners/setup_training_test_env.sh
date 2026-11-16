@@ -170,7 +170,7 @@ from megatron.core.models.gpt import GPTModel
 }
 
 setup_ascend_training_env() {
-    if TE_FL_SKIP_CUDA=1 "$PYTHON_BIN" -c '
+    if NVTE_PLUGIN_SKIP_CUDA=1 "$PYTHON_BIN" -c '
 from megatron.core.extensions.transformer_engine import HAVE_TE
 from megatron.core.extensions.transformer_engine_spec_provider import TESpecProvider
 from megatron.core.models.gpt import GPTModel

@@ -42,7 +42,7 @@ system:
 
 model:
   transformer_impl: transformer_engine
-  te_fl_prefer: reference
+  nvte_plugin_prefer: reference
   attention_backend: unfused
   no_check_for_nan_in_loss_and_grad: true
   no_gradient_accumulation_fusion: true

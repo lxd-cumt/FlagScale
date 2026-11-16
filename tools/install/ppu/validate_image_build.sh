@@ -60,13 +60,13 @@ try:
     dist.all_reduce(value)
     assert value.item() == world * (world + 1) / 2
     if os.environ["SMOKE_MODE"] == "train":
-        from transformer_engine.plugin.core import get_manager
+        from transformer_engine_plugin_fl import get_default_manager
         from transformer_engine.pytorch import Linear
         from megatron.core.extensions.transformer_engine import HAVE_TE
         from megatron.core.models.gpt import GPTModel
 
         assert HAVE_TE and GPTModel is not None
-        selected = get_manager().get_selected_impl_id("generic_gemm")
+        selected = get_default_manager().get_selected_impl_id("generic_gemm")
         assert selected == "reference.torch", selected
         layer = Linear(32, 32, params_dtype=torch.bfloat16).to(device)
         inputs = torch.randn(8, 32, device=device, dtype=torch.bfloat16, requires_grad=True)

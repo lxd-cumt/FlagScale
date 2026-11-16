@@ -164,8 +164,8 @@ jobs:
                 ;;
             esac
             if [ "$te_fl_build_mode" = python ] && \
-               [ "$(yq -r '.dependencies.te_fl.build_environment.TE_FL_SKIP_CUDA // ""' "$config_file")" != 1 ]; then
-              echo "::error::Python-only TE-FL build requires TE_FL_SKIP_CUDA=1" >&2
+               [ "$(yq -r '.dependencies.te_fl.build_environment.NVTE_PLUGIN_SKIP_CUDA // ""' "$config_file")" != 1 ]; then
+              echo "::error::Python-only TE-FL build requires NVTE_PLUGIN_SKIP_CUDA=1" >&2
               exit 1
             fi
           fi

@@ -42,7 +42,8 @@ ENV FLAGSCALE_HOME=/opt/flagscale \
     CUDA_HOME=/opt/dtk/cuda/cuda-12 \
     DEVICE_HOME=/opt/dtk/cuda/cuda-12 \
     CCL_HOME=/opt/dtk/cuda/cuda-12 \
-    TE_FL_SKIP_CUDA=1 \
+    NVTE_PLUGIN=transformer_engine_plugin_fl \
+    NVTE_PLUGIN_SKIP_CUDA=1 \
     TORCHINDUCTOR_WORKER_START=spawn \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 

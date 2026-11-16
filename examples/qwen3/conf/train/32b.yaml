@@ -15,7 +15,7 @@
 system:
   no_shared_fs: ${experiment.runner.no_shared_fs}
   num_workers: 2
-  te_fl_prefer: flagos
+  nvte_plugin_prefer: flagos
   tensor_model_parallel_size: 8
   pipeline_model_parallel_size: 1
   expert_model_parallel_size: 1

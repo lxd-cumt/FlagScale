@@ -30,13 +30,15 @@ dependencies:
     ref: main
     build_mode: python
     build_environment:
-      TE_FL_SKIP_CUDA: "1"
+      NVTE_PLUGIN_SKIP_CUDA: "1"
+      NVTE_PLUGIN: transformer_engine_plugin_fl
       NVTE_WITH_NCCL_EP: "0"
     runtime:
       environment:
-        TE_FL_SKIP_CUDA: "1"
+        NVTE_PLUGIN_SKIP_CUDA: "1"
+        NVTE_PLUGIN: transformer_engine_plugin_fl
         # PPU currently validates the reference implementation only.
-        TE_FL_PREFER: reference
+        NVTE_PLUGIN_PREFER: reference
         NVTE_FLASH_ATTN: "0"
         NVTE_FUSED_ATTN: "0"
         NVTE_UNFUSED_ATTN: "1"

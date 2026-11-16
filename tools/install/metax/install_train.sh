@@ -63,7 +63,7 @@ install_training_runtime() {
         --recommend-shallow --jobs 1" || return 1
     run_cmd -d "$DEBUG" bash -c \
         "cd '$FLAGSCALE_DEPS/TransformerEngine-FL' && \
-        TE_FL_SKIP_CUDA='${TE_FL_SKIP_CUDA:-1}' \
+        NVTE_PLUGIN_SKIP_CUDA='${NVTE_PLUGIN_SKIP_CUDA:-1}' \
         NVTE_WITH_MACA='${NVTE_WITH_MACA:-1}' \
         $pip_cmd install --root-user-action=ignore \
         --no-build-isolation --no-deps ." || return 1

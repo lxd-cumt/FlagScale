@@ -2188,7 +2188,7 @@ def _add_network_size_args(parser):
         "hetero_pipeline_layer_split",
         "use_dualpipev",
         "moe_fb_overlap",
-        "te_fl_prefer",
+        "nvte_plugin_prefer",
         "qk_layernorm_hidden_dim",
         "recompute_granularity_per_stage_micro_batch",
         "recompute_method_per_stage_micro_batch",
